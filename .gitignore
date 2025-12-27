@@ -1,0 +1,45 @@
+﻿# SECRETOS
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# DEPENDENCIAS
+node_modules/
+.pnp
+.pnp.js
+
+# BUILDS
+.next/
+out/
+dist/
+build/
+
+# Prisma
+prisma/migrations/**/migration.sql
+
+# SISTEMA
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+Thumbs.db
+
+# LOGS
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.cache
+
+# TESTING
+coverage/
+.nyc_output/
+
+# UPLOADS LOCAL
+uploads/
+temp/

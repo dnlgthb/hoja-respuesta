@@ -1,14 +1,148 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Schema de Prisma para Plataforma de Evaluaciones Digitales
+// Fase 2: Modelos completos
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// MODELO: PROFESORES
+// ============================================
+model Teacher {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password_hash String
+  name          String
+  created_at    DateTime @default(now())
+  
+  // Relaciones
+  tests         Test[]
+  
+  @@map("teachers")
+}
+
+// ============================================
+// MODELO: PRUEBAS
+// ============================================
+model Test {
+  id           String    @id @default(cuid())
+  teacher_id   String
+  title        String
+  status       TestStatus @default(DRAFT)
+  access_code  String?   @unique  // Código de 6 caracteres (generado al activar)
+  pdf_url      String?              // URL del PDF en Supabase Storage
+  created_at   DateTime  @default(now())
+  activated_at DateTime?            // Cuando se activó la prueba
+  closed_at    DateTime?            // Cuando se cerró la prueba
+  
+  // Relaciones
+  teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  questions        Question[]
+  student_attempts StudentAttempt[]
+  
+  @@map("tests")
+  @@index([teacher_id])
+  @@index([access_code])
+}
+
+// Enum para estados de la prueba
+enum TestStatus {
+  DRAFT    // Borrador (recién creada)
+  ACTIVE   // Activa (estudiantes pueden entrar)
+  CLOSED   // Cerrada (ya no se permite entrar)
+}
+
+// ============================================
+// MODELO: PREGUNTAS
+// ============================================
+model Question {
+  id                  String       @id @default(cuid())
+  test_id             String
+  question_number     Int                      // Número de pregunta (1, 2, 3...)
+  type                QuestionType
+  question_text       String       @db.Text
+  points              Decimal      @db.Decimal(5, 2)  // Ej: 5.00 puntos
+  options             Json?                    // Para múltiple opción: ["A", "B", "C", "D"]
+  correct_answer      String?                  // "V", "F", "A", "B", etc.
+  correction_criteria String?      @db.Text   // Pauta para desarrollo/matemáticas
+  created_at          DateTime     @default(now())
+  
+  // Relaciones
+  test    Test     @relation(fields: [test_id], references: [id], onDelete: Cascade)
+  answers Answer[]
+  
+  @@map("questions")
+  @@index([test_id])
+  @@unique([test_id, question_number])  // No puede haber dos preguntas con el mismo número en una prueba
+}
+
+// Enum para tipos de pregunta
+enum QuestionType {
+  TRUE_FALSE       // Verdadero/Falso
+  MULTIPLE_CHOICE  // Múltiple opción
+  DEVELOPMENT      // Desarrollo
+  MATH             // Matemática
+}
+
+// ============================================
+// MODELO: INTENTOS DE ESTUDIANTES
+// ============================================
+model StudentAttempt {
+  id               String         @id @default(cuid())
+  test_id          String
+  student_name     String
+  student_email    String?                    // Opcional, para envío de resultados
+  device_token     String         @unique     // UUID para autenticación durante prueba
+  results_token    String         @unique     // UUID para ver resultados sin login
+  status           AttemptStatus  @default(IN_PROGRESS)
+  is_unlocked      Boolean        @default(false)  // Para recuperación sin token
+  results_sent     Boolean        @default(false)  // Si ya se envió email con resultados
+  submitted_at     DateTime?                  // Cuando entregó la prueba
+  last_activity_at DateTime       @default(now())  // Última actividad (para detectar sesiones activas)
+  created_at       DateTime       @default(now())
+  
+  // Relaciones
+  test    Test     @relation(fields: [test_id], references: [id], onDelete: Cascade)
+  answers Answer[]
+  
+  @@map("student_attempts")
+  @@index([test_id])
+  @@index([device_token])
+  @@index([results_token])
+  @@unique([test_id, student_name])  // Un estudiante por nombre por prueba
+}
+
+// Enum para estados del intento
+enum AttemptStatus {
+  IN_PROGRESS  // Respondiendo
+  SUBMITTED    // Entregada
+}
+
+// ============================================
+// MODELO: RESPUESTAS
+// ============================================
+model Answer {
+  id                 String   @id @default(cuid())
+  student_attempt_id String
+  question_id        String
+  answer_value       String?  @db.Text  // Respuesta del estudiante ("V", "A", "texto largo", etc.)
+  points_earned      Decimal? @db.Decimal(5, 2)  // Puntos obtenidos (null hasta corrección)
+  ai_feedback        String?  @db.Text  // Retroalimentación de la IA (para desarrollo/math)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+  
+  // Relaciones
+  student_attempt StudentAttempt @relation(fields: [student_attempt_id], references: [id], onDelete: Cascade)
+  question        Question       @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  
+  @@map("answers")
+  @@index([student_attempt_id])
+  @@index([question_id])
+  @@unique([student_attempt_id, question_id])  // Una respuesta por pregunta por intento
 }

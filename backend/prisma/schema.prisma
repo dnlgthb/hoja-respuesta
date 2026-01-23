@@ -20,34 +20,76 @@ model Teacher {
   password_hash String
   name          String
   created_at    DateTime @default(now())
-  
+
   // Relaciones
   tests         Test[]
-  
+  courses       Course[]
+
   @@map("teachers")
+}
+
+// ============================================
+// MODELO: CURSOS
+// ============================================
+model Course {
+  id         String   @id @default(uuid())
+  teacher_id String
+  name       String   // Ej: "3° Medio A"
+  year       Int      // Ej: 2025
+  created_at DateTime @default(now())
+
+  // Relaciones
+  teacher  Teacher         @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  students CourseStudent[]
+  tests    Test[]
+
+  @@map("courses")
+  @@index([teacher_id])
+}
+
+// ============================================
+// MODELO: ESTUDIANTES DE CURSO
+// ============================================
+model CourseStudent {
+  id            String   @id @default(uuid())
+  course_id     String
+  student_name  String
+  student_email String?
+  created_at    DateTime @default(now())
+
+  // Relaciones
+  course           Course           @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  student_attempts StudentAttempt[]
+
+  @@map("course_students")
+  @@index([course_id])
+  @@unique([course_id, student_name]) // No puede haber dos estudiantes con el mismo nombre en un curso
 }
 
 // ============================================
 // MODELO: PRUEBAS
 // ============================================
 model Test {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   teacher_id   String
+  course_id    String?    // Curso asociado (opcional)
   title        String
   status       TestStatus @default(DRAFT)
-  access_code  String?   @unique  // Código de 6 caracteres (generado al activar)
+  access_code  String?    @unique  // Código de 6 caracteres (generado al activar)
   pdf_url      String?              // URL del PDF en Supabase Storage
-  created_at   DateTime  @default(now())
+  created_at   DateTime   @default(now())
   activated_at DateTime?            // Cuando se activó la prueba
   closed_at    DateTime?            // Cuando se cerró la prueba
-  
+
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  course           Course?           @relation(fields: [course_id], references: [id], onDelete: SetNull)
   questions        Question[]
   student_attempts StudentAttempt[]
-  
+
   @@map("tests")
   @@index([teacher_id])
+  @@index([course_id])
   @@index([access_code])
 }
 
@@ -94,25 +136,28 @@ enum QuestionType {
 // MODELO: INTENTOS DE ESTUDIANTES
 // ============================================
 model StudentAttempt {
-  id               String         @id @default(cuid())
-  test_id          String
-  student_name     String
-  student_email    String?                    // Opcional, para envío de resultados
-  device_token     String         @unique     // UUID para autenticación durante prueba
-  results_token    String         @unique     // UUID para ver resultados sin login
-  status           AttemptStatus  @default(IN_PROGRESS)
-  is_unlocked      Boolean        @default(false)  // Para recuperación sin token
-  results_sent     Boolean        @default(false)  // Si ya se envió email con resultados
-  submitted_at     DateTime?                  // Cuando entregó la prueba
-  last_activity_at DateTime       @default(now())  // Última actividad (para detectar sesiones activas)
-  created_at       DateTime       @default(now())
-  
+  id                String         @id @default(cuid())
+  test_id           String
+  course_student_id String?        // Referencia al estudiante del curso (opcional)
+  student_name      String
+  student_email     String?                    // Opcional, para envío de resultados
+  device_token      String         @unique     // UUID para autenticación durante prueba
+  results_token     String         @unique     // UUID para ver resultados sin login
+  status            AttemptStatus  @default(IN_PROGRESS)
+  is_unlocked       Boolean        @default(false)  // Para recuperación sin token
+  results_sent      Boolean        @default(false)  // Si ya se envió email con resultados
+  submitted_at      DateTime?                  // Cuando entregó la prueba
+  last_activity_at  DateTime       @default(now())  // Última actividad (para detectar sesiones activas)
+  created_at        DateTime       @default(now())
+
   // Relaciones
-  test    Test     @relation(fields: [test_id], references: [id], onDelete: Cascade)
-  answers Answer[]
-  
+  test           Test           @relation(fields: [test_id], references: [id], onDelete: Cascade)
+  course_student CourseStudent? @relation(fields: [course_student_id], references: [id], onDelete: SetNull)
+  answers        Answer[]
+
   @@map("student_attempts")
   @@index([test_id])
+  @@index([course_student_id])
   @@index([device_token])
   @@index([results_token])
   @@unique([test_id, student_name])  // Un estudiante por nombre por prueba

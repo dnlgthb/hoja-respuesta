@@ -10,10 +10,12 @@ const { extractTextFromPDF } = require('../../utils/pdfExtractor');
 export interface CreateTestData {
   title: string;
   teacherId: string;
+  courseId?: string;
 }
 
 export interface UpdateTestData {
   title?: string;
+  courseId?: string;
 }
 
 export class TestsService {
@@ -22,12 +24,26 @@ export class TestsService {
    * Crear una nueva prueba (estado: DRAFT)
    */
   async createTest(data: CreateTestData) {
-    const { title, teacherId } = data;
-    
+    const { title, teacherId, courseId } = data;
+
+    // Si se proporciona courseId, verificar que pertenezca al profesor
+    if (courseId) {
+      const course = await prisma.course.findFirst({
+        where: {
+          id: courseId,
+          teacher_id: teacherId,
+        },
+      });
+      if (!course) {
+        throw new Error('Curso no encontrado o no pertenece al profesor');
+      }
+    }
+
     const test = await prisma.test.create({
       data: {
         title,
         teacher_id: teacherId,
+        course_id: courseId || null,
         status: TestStatus.DRAFT,
       },
       include: {
@@ -38,6 +54,13 @@ export class TestsService {
             email: true,
           },
         },
+        course: {
+          select: {
+            id: true,
+            name: true,
+            year: true,
+          },
+        },
         _count: {
           select: {
             questions: true,
@@ -46,7 +69,7 @@ export class TestsService {
         },
       },
     });
-    
+
     return test;
   }
   
@@ -91,6 +114,15 @@ export class TestsService {
             email: true,
           },
         },
+        course: {
+          include: {
+            students: {
+              orderBy: {
+                student_name: 'asc',
+              },
+            },
+          },
+        },
         questions: {
           orderBy: {
             question_number: 'asc',
@@ -103,11 +135,11 @@ export class TestsService {
         },
       },
     });
-    
+
     if (!test) {
       throw new Error('Prueba no encontrada');
     }
-    
+
     return test;
   }
   
@@ -122,22 +154,43 @@ export class TestsService {
         teacher_id: teacherId,
       },
     });
-    
+
     if (!existingTest) {
       throw new Error('Prueba no encontrada');
     }
-    
+
     // No permitir editar pruebas activas o cerradas
     if (existingTest.status !== TestStatus.DRAFT) {
       throw new Error('Solo se pueden editar pruebas en borrador');
     }
-    
+
+    // Si se proporciona courseId, verificar que pertenezca al profesor
+    if (data.courseId) {
+      const course = await prisma.course.findFirst({
+        where: {
+          id: data.courseId,
+          teacher_id: teacherId,
+        },
+      });
+      if (!course) {
+        throw new Error('Curso no encontrado o no pertenece al profesor');
+      }
+    }
+
     const updatedTest = await prisma.test.update({
       where: { id: testId },
       data: {
         title: data.title,
+        course_id: data.courseId !== undefined ? data.courseId : undefined,
       },
       include: {
+        course: {
+          select: {
+            id: true,
+            name: true,
+            year: true,
+          },
+        },
         _count: {
           select: {
             questions: true,
@@ -146,7 +199,7 @@ export class TestsService {
         },
       },
     });
-    
+
     return updatedTest;
   }
   
@@ -291,25 +344,30 @@ for (let i = 0; i < questions.length; i++) {
   async activateTest(testId: string, teacherId: string) {
     // Importar la función de generación de código
     const { generateUniqueAccessCode } = require('../../utils/generateCode');
-    
+
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
-    
+
     // Verificar que esté en estado DRAFT
     if (test.status !== TestStatus.DRAFT) {
       throw new Error('Solo se pueden activar pruebas en borrador');
     }
-    
+
+    // Verificar que tenga un curso asignado
+    if (!test.course_id) {
+      throw new Error('La prueba debe tener un curso asignado para ser activada');
+    }
+
     // Verificar que tenga al menos una pregunta
     if (test.questions.length === 0) {
       throw new Error('La prueba debe tener al menos una pregunta para ser activada');
     }
-    
+
     // Verificar que tenga PDF subido
     if (!test.pdf_url) {
       throw new Error('La prueba debe tener un PDF subido para ser activada');
     }
-    
+
     // Generar código único de 6 caracteres
     const checkCodeExists = async (code: string) => {
       const existing = await prisma.test.findUnique({
@@ -317,9 +375,9 @@ for (let i = 0; i < questions.length; i++) {
       });
       return existing !== null;
     };
-    
+
     const accessCode = await generateUniqueAccessCode(checkCodeExists);
-    
+
     // Activar la prueba
     const activatedTest = await prisma.test.update({
       where: { id: testId },
@@ -329,6 +387,13 @@ for (let i = 0; i < questions.length; i++) {
         activated_at: new Date(),
       },
       include: {
+        course: {
+          select: {
+            id: true,
+            name: true,
+            year: true,
+          },
+        },
         _count: {
           select: {
             questions: true,
@@ -337,8 +402,74 @@ for (let i = 0; i < questions.length; i++) {
         },
       },
     });
-    
+
     return activatedTest;
+  }
+  /**
+   * Actualizar una pregunta específica
+   */
+  async updateQuestion(
+    testId: string,
+    questionId: string,
+    teacherId: string,
+    updates: {
+      question_text?: string;
+      type?: QuestionType;
+      points?: number;
+      correct_answer?: string;
+      options?: string[];
+      correction_criteria?: string;
+    }
+  ) {
+    // Verificar que la prueba pertenezca al profesor
+    const test = await this.getTestById(testId, teacherId);
+    
+    // Verificar que la pregunta pertenezca a la prueba
+    const question = await prisma.question.findFirst({
+      where: {
+        id: questionId,
+        test_id: testId,
+      },
+    });
+    
+    if (!question) {
+      throw new Error('Pregunta no encontrada');
+    }
+    
+    // Actualizar la pregunta
+    const updatedQuestion = await prisma.question.update({
+      where: { id: questionId },
+      data: updates,
+    });
+    
+    return updatedQuestion;
+  }
+
+  /**
+   * Eliminar una pregunta específica
+   */
+  async deleteQuestion(testId: string, questionId: string, teacherId: string) {
+    // Verificar que la prueba pertenezca al profesor
+    const test = await this.getTestById(testId, teacherId);
+    
+    // Verificar que la pregunta pertenezca a la prueba
+    const question = await prisma.question.findFirst({
+      where: {
+        id: questionId,
+        test_id: testId,
+      },
+    });
+    
+    if (!question) {
+      throw new Error('Pregunta no encontrada');
+    }
+    
+    // Eliminar la pregunta
+    await prisma.question.delete({
+      where: { id: questionId },
+    });
+    
+    return { message: 'Pregunta eliminada correctamente' };
   }
 }
 

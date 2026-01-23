@@ -1,6 +1,7 @@
 // Controlador de Tests - Maneja peticiones HTTP
 import { Request, Response } from 'express';
 import { testsService } from './tests.service';
+import { studentService } from '../student/student.service';
 
 export class TestsController {
   
@@ -10,19 +11,19 @@ export class TestsController {
    */
   async createTest(req: Request, res: Response): Promise<void> {
     try {
-      const { title } = req.body;
+      const { title, courseId } = req.body;
       const teacherId = req.teacherId!; // Viene del middleware de auth
-      
+
       // Validaciones
       if (!title || title.trim().length === 0) {
         res.status(400).json({ error: 'El título es requerido' });
         return;
       }
-      
-      const test = await testsService.createTest({ title, teacherId });
-      
+
+      const test = await testsService.createTest({ title, teacherId, courseId });
+
       res.status(201).json(test);
-      
+
     } catch (error) {
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });
@@ -82,19 +83,19 @@ export class TestsController {
   async updateTest(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { title } = req.body;
+      const { title, courseId } = req.body;
       const teacherId = req.teacherId!;
-      
-      // Validaciones
-      if (!title || title.trim().length === 0) {
-        res.status(400).json({ error: 'El título es requerido' });
+
+      // Al menos un campo debe estar presente
+      if (!title && courseId === undefined) {
+        res.status(400).json({ error: 'Debe proporcionar al menos un campo para actualizar' });
         return;
       }
-      
-      const updatedTest = await testsService.updateTest(id, teacherId, { title });
-      
+
+      const updatedTest = await testsService.updateTest(id, teacherId, { title, courseId });
+
       res.status(200).json(updatedTest);
-      
+
     } catch (error) {
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });
@@ -186,6 +187,7 @@ export class TestsController {
       }
     }
   }
+  
   /**
    * POST /api/tests/:id/activate
    * Activar una prueba (generar código de acceso)
@@ -204,6 +206,108 @@ export class TestsController {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Error al activar la prueba' });
+      }
+    }
+  }
+
+  /**
+   * PUT /api/tests/:id/questions/:questionId
+   * Actualizar una pregunta específica
+   */
+  async updateQuestion(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId, questionId } = req.params;
+      const teacherId = req.teacherId!;
+      const updates = req.body;
+      
+      const updatedQuestion = await testsService.updateQuestion(
+        testId,
+        questionId,
+        teacherId,
+        updates
+      );
+      
+      res.status(200).json(updatedQuestion);
+      
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al actualizar la pregunta' });
+      }
+    }
+  }
+
+  /**
+   * DELETE /api/tests/:id/questions/:questionId
+   * Eliminar una pregunta específica
+   */
+  async deleteQuestion(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId, questionId } = req.params;
+      const teacherId = req.teacherId!;
+
+      const result = await testsService.deleteQuestion(testId, questionId, teacherId);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al eliminar la pregunta' });
+      }
+    }
+  }
+
+  /**
+   * GET /api/tests/:id/attempts
+   * Obtener intentos de una prueba (monitoreo)
+   */
+  async getTestAttempts(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teacherId = req.teacherId!;
+
+      const result = await studentService.getTestAttempts(id, teacherId);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes('permiso')) {
+          res.status(403).json({ error: error.message });
+        } else {
+          res.status(404).json({ error: error.message });
+        }
+      } else {
+        res.status(500).json({ error: 'Error al obtener los intentos' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/attempts/:attemptId/unlock
+   * Desbloquear estudiante (elimina el intento)
+   */
+  async unlockStudent(req: Request, res: Response): Promise<void> {
+    try {
+      const { attemptId } = req.params;
+      const teacherId = req.teacherId!;
+
+      const result = await studentService.unlockStudent(attemptId, teacherId);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes('permiso')) {
+          res.status(403).json({ error: error.message });
+        } else {
+          res.status(404).json({ error: error.message });
+        }
+      } else {
+        res.status(500).json({ error: 'Error al desbloquear estudiante' });
       }
     }
   }

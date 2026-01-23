@@ -6,6 +6,8 @@ import { env } from './config/env';
 // Rutas
 import authRoutes from './modules/auth/auth.routes';
 import testsRoutes from './modules/tests/tests.routes';
+import studentRoutes from './modules/student/student.routes';
+import coursesRoutes from './modules/courses/courses.routes';
 
 const app: Application = express();
 
@@ -44,7 +46,11 @@ app.use('/api/auth', authRoutes);
 // Rutas de tests
 app.use('/api/tests', testsRoutes);
 
-// TODO: Agregar más rutas aquí
+// Rutas de cursos
+app.use('/api/courses', coursesRoutes);
+
+// Rutas de estudiantes (públicas)
+app.use('/api/student', studentRoutes);
 
 // ============================================
 // MANEJO DE ERRORES 404

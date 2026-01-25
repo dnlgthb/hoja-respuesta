@@ -36,7 +36,7 @@ export class StudentController {
    */
   async join(req: Request, res: Response): Promise<void> {
     try {
-      const { accessCode, courseStudentId, deviceToken } = req.body;
+      const { accessCode, courseStudentId, deviceToken, studentEmail } = req.body;
 
       // Validaciones básicas
       if (!accessCode) {
@@ -53,6 +53,7 @@ export class StudentController {
         accessCode: accessCode.toUpperCase().trim(),
         courseStudentId,
         deviceToken,
+        studentEmail: studentEmail?.trim() || undefined,
       });
 
       res.status(200).json(result);

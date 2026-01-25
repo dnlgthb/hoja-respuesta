@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { studentAPI } from '@/lib/api';
-import { FileText, Search, AlertTriangle, CheckCircle2, ArrowLeft, User } from 'lucide-react';
+import { FileText, Search, AlertTriangle, CheckCircle2, ArrowLeft, User, Mail } from 'lucide-react';
 import type { AvailableStudent } from '@/types';
 
 // ============================================
@@ -49,6 +49,7 @@ export default function PruebaPage() {
 
   // Paso 3: Confirmación
   const [confirmText, setConfirmText] = useState('');
+  const [studentEmail, setStudentEmail] = useState('');
 
   // Cargar deviceToken de localStorage al montar
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function PruebaPage() {
     setSelectedStudent(student);
     setStep('confirm');
     setConfirmText('');
+    setStudentEmail('');
   };
 
   const handleBackToSelect = () => {
@@ -156,6 +158,7 @@ export default function PruebaPage() {
         accessCode,
         courseStudentId: selectedStudent.id,
         deviceToken: deviceToken || undefined,
+        studentEmail: studentEmail.trim() || undefined,
       });
 
       // Guardar deviceToken en localStorage
@@ -423,6 +426,28 @@ export default function PruebaPage() {
               </div>
             )}
 
+            {/* Input de email */}
+            <div className="mb-4">
+              <label htmlFor="studentEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  <span>Tu correo electrónico (opcional)</span>
+                </div>
+              </label>
+              <input
+                id="studentEmail"
+                type="email"
+                value={studentEmail}
+                onChange={(e) => setStudentEmail(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900"
+                placeholder="tu@correo.com"
+                autoComplete="email"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Ingresa tu correo si quieres recibir los resultados por email
+              </p>
+            </div>
+
             {/* Input de confirmación */}
             <div className="mb-6">
               <label htmlFor="confirmText" className="block text-sm font-medium text-gray-700 mb-2">
@@ -436,7 +461,6 @@ export default function PruebaPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 text-center font-mono tracking-wider"
                 placeholder="CONFIRMO"
                 autoComplete="off"
-                autoFocus
               />
             </div>
 

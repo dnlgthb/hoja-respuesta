@@ -7,7 +7,7 @@ import Navbar from '@/components/Navbar';
 import QuestionEditor from '@/components/QuestionEditor';
 import { testsAPI, questionsAPI, coursesAPI } from '@/lib/api';
 import { Test, Question, Course } from '@/types';
-import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
 export default function TestDetailPage() {
@@ -30,6 +30,10 @@ export default function TestDetailPage() {
   const [showCourseSelector, setShowCourseSelector] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [isAssigningCourse, setIsAssigningCourse] = useState(false);
+
+  // Duration modal
+  const [showDurationModal, setShowDurationModal] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState<string>('60');
 
   // Cargar prueba y preguntas
   useEffect(() => {
@@ -146,14 +150,14 @@ export default function TestDetailPage() {
     }
   };
 
-  // Activar prueba
-  const handleActivateTest = async () => {
+  // Abrir modal de activación
+  const handleOpenActivateModal = () => {
     if (!test) return;
 
     // Verificar si ya está activada (revisar varios formatos)
-    const isActive = test.isActive ?? test.is_active;
+    const isActiveCheck = test.isActive ?? test.is_active;
     const status = (test as any).status;
-    const alreadyActive = isActive || status === 'ACTIVE';
+    const alreadyActive = isActiveCheck || status === 'ACTIVE';
 
     if (alreadyActive) {
       // Ya está activa, ir directo a la página de activación
@@ -162,8 +166,8 @@ export default function TestDetailPage() {
     }
 
     // Verificar que tenga curso asignado
-    const courseId = test.courseId || test.course_id;
-    if (!courseId) {
+    const courseIdCheck = test.courseId || test.course_id;
+    if (!courseIdCheck) {
       setError('Debes asignar un curso antes de activar la prueba');
       return;
     }
@@ -185,14 +189,30 @@ export default function TestDetailPage() {
       return;
     }
 
+    setError(null);
+    setShowDurationModal(true);
+  };
+
+  // Activar prueba con duración
+  const handleActivateTest = async () => {
+    if (!test) return;
+
+    const duration = parseInt(durationMinutes);
+    if (isNaN(duration) || duration < 1 || duration > 480) {
+      setError('La duración debe ser entre 1 y 480 minutos');
+      return;
+    }
+
     try {
       setIsActivating(true);
       setError(null);
 
-      const response = await testsAPI.activate(testId);
+      const response = await testsAPI.activate(testId, duration);
 
       // Actualizar el estado local con la prueba activada
       setTest(response.test || response);
+
+      setShowDurationModal(false);
 
       // Redirigir a página de activación
       router.push(ROUTES.TEST_ACTIVATE(testId));
@@ -356,7 +376,7 @@ export default function TestDetailPage() {
                         </button>
                         <button
                           onClick={() => setShowCourseSelector(false)}
-                          className="px-4 py-2 border border-amber-300 rounded-md hover:bg-amber-100"
+                          className="px-4 py-2 border border-amber-300 rounded-md hover:bg-amber-100 text-gray-700 font-medium"
                         >
                           Cancelar
                         </button>
@@ -408,7 +428,7 @@ export default function TestDetailPage() {
 
               {!isActive ? (
                 <button
-                  onClick={handleActivateTest}
+                  onClick={handleOpenActivateModal}
                   disabled={isActivating}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -417,7 +437,7 @@ export default function TestDetailPage() {
                 </button>
               ) : (
                 <button
-                  onClick={handleActivateTest}
+                  onClick={handleOpenActivateModal}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
                   <CheckCircle className="w-5 h-5" />
@@ -433,6 +453,95 @@ export default function TestDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Modal de Duración */}
+        {showDurationModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Configurar Tiempo de Prueba
+                </h3>
+                <button
+                  onClick={() => setShowDurationModal(false)}
+                  className="p-1 hover:bg-gray-100 rounded"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Clock className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Duración de la prueba</p>
+                    <p className="text-sm text-gray-500">
+                      Define cuánto tiempo tendrán los estudiantes
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Tiempo en minutos
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="480"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(e.target.value)}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (isNaN(val) || val < 1) {
+                        setDurationMinutes('1');
+                      } else if (val > 480) {
+                        setDurationMinutes('480');
+                      }
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent text-lg text-gray-900"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Mínimo 1 minuto, máximo 480 minutos (8 horas)
+                  </p>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-3 mb-6">
+                  <p className="text-sm text-amber-800">
+                    <strong>Importante:</strong> Una vez activada, los estudiantes tendrán exactamente{' '}
+                    <strong>{durationMinutes || '0'} minutos</strong> para completar la prueba. Al terminar el tiempo,
+                    las respuestas se enviarán automáticamente.
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDurationModal(false)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleActivateTest}
+                    disabled={isActivating}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <Play className="w-4 h-4" />
+                    {isActivating ? 'Activando...' : 'Activar Prueba'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   );

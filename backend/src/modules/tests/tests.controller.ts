@@ -195,17 +195,69 @@ export class TestsController {
   async activateTest(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const { durationMinutes } = req.body;
       const teacherId = req.teacherId!;
-      
-      const activatedTest = await testsService.activateTest(id, teacherId);
-      
+
+      // Validar que se proporcionó duración
+      if (!durationMinutes) {
+        res.status(400).json({ error: 'La duración en minutos es requerida' });
+        return;
+      }
+
+      const activatedTest = await testsService.activateTest(id, teacherId, durationMinutes);
+
       res.status(200).json(activatedTest);
-      
+
     } catch (error) {
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Error al activar la prueba' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/close
+   * Cerrar una prueba activa
+   */
+  async closeTest(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teacherId = req.teacherId!;
+
+      const closedTest = await testsService.closeTest(id, teacherId);
+
+      res.status(200).json(closedTest);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al cerrar la prueba' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/duplicate
+   * Duplicar una prueba existente
+   */
+  async duplicateTest(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { title, courseId } = req.body;
+      const teacherId = req.teacherId!;
+
+      const duplicatedTest = await testsService.duplicateTest(id, teacherId, title, courseId);
+
+      res.status(201).json(duplicatedTest);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al duplicar la prueba' });
       }
     }
   }
@@ -256,6 +308,127 @@ export class TestsController {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Error al eliminar la pregunta' });
+      }
+    }
+  }
+
+  /**
+   * GET /api/tests/:id/results
+   * Obtener resultados de una prueba (para dashboard de resultados)
+   */
+  async getTestResults(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teacherId = req.teacherId!;
+
+      const results = await testsService.getTestResults(id, teacherId);
+
+      res.status(200).json(results);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al obtener los resultados' });
+      }
+    }
+  }
+
+  /**
+   * PUT /api/tests/:id/answers/:answerId
+   * Actualizar una respuesta (edición manual de puntaje/feedback)
+   */
+  async updateAnswer(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId, answerId } = req.params;
+      const { pointsEarned, aiFeedback } = req.body;
+      const teacherId = req.teacherId!;
+
+      const updatedAnswer = await testsService.updateAnswer(
+        testId,
+        answerId,
+        teacherId,
+        { pointsEarned, aiFeedback }
+      );
+
+      res.status(200).json(updatedAnswer);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al actualizar la respuesta' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/attempts/:attemptId/mark-reviewed
+   * Marcar un intento como revisado
+   */
+  async markAttemptReviewed(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId, attemptId } = req.params;
+      const teacherId = req.teacherId!;
+
+      const result = await testsService.markAttemptReviewed(testId, attemptId, teacherId);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al marcar como revisado' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/send-results
+   * Enviar resultados por email a estudiantes
+   */
+  async sendResults(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const { studentAttemptIds } = req.body;
+      const teacherId = req.teacherId!;
+
+      const result = await testsService.sendResults(testId, teacherId, studentAttemptIds);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al enviar los resultados' });
+      }
+    }
+  }
+
+  /**
+   * GET /api/tests/:id/export
+   * Exportar resultados a Excel
+   */
+  async exportResults(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const teacherId = req.teacherId!;
+
+      const buffer = await testsService.exportResults(testId, teacherId);
+
+      // Configurar headers para descarga
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="resultados-${testId}.xlsx"`);
+
+      res.send(buffer);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al exportar los resultados' });
       }
     }
   }

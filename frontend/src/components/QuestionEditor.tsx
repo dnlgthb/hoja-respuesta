@@ -35,8 +35,29 @@ export default function QuestionEditor({ question, index, onChange }: QuestionEd
   };
 
   const handleCriteriaChange = (value: string) => {
-    setLocalCriteria(value);
-    onChange({ correction_criteria: value });
+    // Normalizar saltos de línea: reemplazar \r\n y múltiples \n por un solo \n
+    const normalized = value.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+    setLocalCriteria(normalized);
+    onChange({ correction_criteria: normalized });
+  };
+
+  const handleCriteriaPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text');
+    // Normalizar el texto pegado
+    const normalized = pastedText.replace(/\r\n/g, '\n').replace(/\n{2,}/g, '\n');
+
+    const textarea = e.currentTarget;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const newValue = localCriteria.substring(0, start) + normalized + localCriteria.substring(end);
+
+    handleCriteriaChange(newValue);
+
+    // Mover cursor después del texto pegado
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + normalized.length;
+    }, 0);
   };
 
   const handlePointsChange = (value: number) => {
@@ -135,15 +156,20 @@ export default function QuestionEditor({ question, index, onChange }: QuestionEd
               Opciones (marca la correcta):
             </label>
             <div className="space-y-2">
-              {localOptions.map((option, optionIndex) => (
+              {localOptions.map((option, optionIndex) => {
+                const letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][optionIndex] || String(optionIndex + 1);
+                return (
                 <div key={optionIndex} className="flex items-center gap-2">
                   <input
                     type="radio"
                     name={`question-${question.id}`}
-                    checked={localCorrectAnswer === option}
-                    onChange={() => handleCorrectAnswerChange(option)}
+                    checked={localCorrectAnswer === letter}
+                    onChange={() => handleCorrectAnswerChange(letter)}
                     className="w-4 h-4 text-primary focus:ring-primary flex-shrink-0"
                   />
+                  <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
+                    {letter}
+                  </span>
                   <input
                     type="text"
                     value={option}
@@ -159,7 +185,8 @@ export default function QuestionEditor({ question, index, onChange }: QuestionEd
                     ✕
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <button
               type="button"
@@ -180,9 +207,10 @@ export default function QuestionEditor({ question, index, onChange }: QuestionEd
             <textarea
               value={localCriteria}
               onChange={(e) => handleCriteriaChange(e.target.value)}
+              onPaste={handleCriteriaPaste}
               placeholder="Escribe los criterios de evaluación para esta respuesta abierta..."
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900 leading-relaxed"
             />
             <p className="text-xs text-gray-500 mt-1">
               La IA usará esta pauta para evaluar las respuestas de los estudiantes

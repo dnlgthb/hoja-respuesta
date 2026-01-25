@@ -118,4 +118,75 @@ ${content}`;
   return parsed.students || [];
 }
 
+/**
+ * Corregir respuesta de desarrollo o matemática con IA
+ * @param params - Parámetros de corrección
+ * @returns Puntaje y feedback
+ */
+export async function correctWithAI(params: {
+  questionType: 'DEVELOPMENT' | 'MATH';
+  questionText: string;
+  correctionCriteria: string;
+  maxPoints: number;
+  studentAnswer: string;
+}): Promise<{ pointsEarned: number; feedback: string }> {
+  const { questionType, questionText, correctionCriteria, maxPoints, studentAnswer } = params;
+
+  const typeDescription = questionType === 'MATH'
+    ? 'Esta es una pregunta de MATEMÁTICAS. Evalúa tanto el procedimiento como el resultado final. Un procedimiento correcto con error de cálculo menor puede recibir puntaje parcial.'
+    : 'Esta es una pregunta de DESARROLLO. Evalúa la comprensión conceptual, claridad de expresión y uso correcto de términos.';
+
+  const prompt = `Eres un profesor evaluando la respuesta de un estudiante. Tu rol es ser justo, pedagógico y constructivo.
+
+${typeDescription}
+
+PREGUNTA:
+${questionText}
+
+PAUTA DE CORRECCIÓN (criterios del profesor):
+${correctionCriteria || 'No se proporcionó pauta específica. Evalúa según la correctitud y completitud de la respuesta.'}
+
+PUNTAJE MÁXIMO: ${maxPoints} puntos
+
+RESPUESTA DEL ESTUDIANTE:
+${studentAnswer}
+
+INSTRUCCIONES:
+1. Evalúa la respuesta según la pauta de corrección
+2. Asigna un puntaje de 0 a ${maxPoints} (puede ser decimal, ej: 1.5)
+3. Proporciona feedback constructivo y específico
+4. Si la respuesta es parcialmente correcta, explica qué faltó o qué estuvo mal
+5. Sé alentador pero honesto
+
+Responde SOLO con JSON en este formato:
+{
+  "pointsEarned": <número entre 0 y ${maxPoints}>,
+  "feedback": "<feedback constructivo para el estudiante>"
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un profesor experto en evaluación educativa. Corriges respuestas de manera justa y pedagógica. Respondes solo en formato JSON válido.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.3, // Baja para consistencia
+    response_format: { type: 'json_object' },
+  });
+
+  const responseText = completion.choices[0]?.message.content || '{}';
+  const parsed = JSON.parse(responseText);
+
+  return {
+    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    feedback: parsed.feedback || 'No se pudo generar feedback.',
+  };
+}
+
 export default openai;

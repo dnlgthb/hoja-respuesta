@@ -6,6 +6,8 @@ export const ROUTES = {
   NEW_TEST: '/tests/new',
   TEST_DETAIL: (id: string) => `/tests/${id}`,
   TEST_ACTIVATE: (id: string) => `/tests/${id}/activate`,
+  TEST_MONITOR: (id: string) => `/tests/${id}/monitor`,
+  TEST_RESULTS: (id: string) => `/tests/${id}/results`,
   COURSES: '/cursos',
   NEW_COURSE: '/cursos/nuevo',
   COURSE_DETAIL: (id: string) => `/cursos/${id}`,

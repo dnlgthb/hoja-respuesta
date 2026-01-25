@@ -70,16 +70,18 @@ model CourseStudent {
 // MODELO: PRUEBAS
 // ============================================
 model Test {
-  id           String     @id @default(cuid())
-  teacher_id   String
-  course_id    String?    // Curso asociado (opcional)
-  title        String
-  status       TestStatus @default(DRAFT)
-  access_code  String?    @unique  // Código de 6 caracteres (generado al activar)
-  pdf_url      String?              // URL del PDF en Supabase Storage
-  created_at   DateTime   @default(now())
-  activated_at DateTime?            // Cuando se activó la prueba
-  closed_at    DateTime?            // Cuando se cerró la prueba
+  id               String     @id @default(cuid())
+  teacher_id       String
+  course_id        String?    // Curso asociado (opcional)
+  title            String
+  status           TestStatus @default(DRAFT)
+  access_code      String?    @unique  // Código de 6 caracteres (generado al activar)
+  pdf_url          String?              // URL del PDF en Supabase Storage
+  duration_minutes Int?                 // Duración de la prueba en minutos (1-480)
+  created_at       DateTime   @default(now())
+  activated_at     DateTime?            // Cuando se activó la prueba
+  ends_at          DateTime?            // Cuando termina la prueba (activated_at + duration_minutes)
+  closed_at        DateTime?            // Cuando se cerró la prueba
 
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
@@ -147,6 +149,8 @@ model StudentAttempt {
   is_unlocked       Boolean        @default(false)  // Para recuperación sin token
   results_sent      Boolean        @default(false)  // Si ya se envió email con resultados
   submitted_at      DateTime?                  // Cuando entregó la prueba
+  reviewed_at       DateTime?                  // Cuando el profesor marcó como revisado
+  results_sent_at   DateTime?                  // Cuando se envió el email de resultados
   last_activity_at  DateTime       @default(now())  // Última actividad (para detectar sesiones activas)
   created_at        DateTime       @default(now())
 

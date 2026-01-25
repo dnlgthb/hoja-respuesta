@@ -196,6 +196,7 @@ export interface JoinTestRequest {
   accessCode: string;
   courseStudentId: string;
   deviceToken?: string;
+  studentEmail?: string;
 }
 
 export interface JoinTestResponse {
@@ -264,6 +265,10 @@ export interface TestAttemptsResponse {
     status: string;
     courseName: string | null;
     totalStudents: number;
+    durationMinutes: number | null;
+    activatedAt: string | null;
+    endsAt: string | null;
+    timeRemainingSeconds: number | null;
   };
   students: MonitorStudent[];
   summary: {

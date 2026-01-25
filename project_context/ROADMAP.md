@@ -19,8 +19,8 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 | 1 | Setup inicial | ✅ Completada |
 | 2 | Backend básico | ✅ Completada |
 | 3 | Frontend profesor | ✅ Completada |
-| 4 | Sistema estudiantes | 🔄 En progreso |
-| 5 | Corrección y resultados | ⏳ Pendiente |
+| 4 | Sistema estudiantes | ✅ Completada |
+| 5 | Corrección y resultados | ✅ Completada |
 | 6 | Testing y ajustes | ⏳ Pendiente |
 
 ---
@@ -50,8 +50,11 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 - [x] Editor de preguntas por tipo (V/F, múltiple opción, desarrollo, matemática)
 - [x] Configuración de puntajes
 - [x] Activación con código de 6 caracteres y QR
+- [x] Duplicar pruebas existentes (copia con preguntas)
+- [x] Estados de prueba: Borrador / Activa / Finalizada
+- [x] Navegación inteligente desde dashboard (Editar → Monitor → Resultados)
 
-### Fase 4: Sistema Estudiantes 🔄
+### Fase 4: Sistema Estudiantes ✅
 
 **4.1 Sistema de Cursos (Backend + Frontend profesor)** ✅
 - [x] Modelo Course y CourseStudent en base de datos
@@ -60,40 +63,86 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 - [x] IA extrae nombres y emails del archivo (GPT-4o-mini)
 - [x] Asociar prueba a un curso al crearla
 
-**4.2 Tiempo Límite de Pruebas** ⏳
-- [ ] Campo duración en minutos al activar prueba
-- [ ] Validar solo UNA prueba activa a la vez
-- [ ] Temporizador visible para estudiante
-- [ ] Envío automático al vencer tiempo
+**4.2 Tiempo Límite de Pruebas** ✅
+- [x] Campo duración en minutos al activar prueba
+- [x] Permitir múltiples pruebas activas simultáneas
+- [x] Temporizador visible para estudiante
+- [x] Envío automático al vencer tiempo
+- [x] Cierre automático de pruebas expiradas (al acceder al dashboard o monitor)
 
 **4.3 Frontend Estudiante (Flujo de ingreso)** ✅
 - [x] Página de ingreso con código de 6 caracteres
 - [x] Selección de nombre desde lista cerrada (buscador con autocompletado)
+- [x] Campo de email opcional (para recibir resultados)
 - [x] Confirmación: escribir "CONFIRMO"
 - [x] Bloqueo de nombre una vez confirmado (course_student_id)
-- [ ] Interfaz de prueba (PDF lado izquierdo + hoja de respuestas lado derecho)
-- [ ] Formulario con 4 tipos de respuesta
-- [ ] Autosave cada 10 segundos
-- [ ] Botón de entrega con link de resultados
+- [x] Interfaz de prueba (PDF lado izquierdo + hoja de respuestas lado derecho)
+- [x] Formulario con 4 tipos de respuesta (V/F, alternativas, desarrollo, matemática)
+- [x] Autosave cada 10 segundos
+- [x] Botón de entrega con confirmación
+- [x] Pantalla post-entrega con mensaje sobre resultados por email
 
 **4.4 Dashboard de Monitoreo (Profesor)** ✅
 - [x] Ver estudiantes del curso con estado (No iniciado, En progreso, Entregado)
 - [x] Resumen visual con contadores
-- [x] Botón para desbloquear nombres (elimina intento)
+- [x] Botón para desbloquear nombres (permite reintentar)
 - [x] Auto-refresh cada 30 segundos
+- [x] Botón acceso directo desde página de activación
+- [x] Botón para cerrar prueba manualmente
 
-### Fase 5: Corrección y Resultados ⏳
-- [ ] Corrección automática (V/F, múltiple opción)
-- [ ] Corrección con IA (desarrollo, matemáticas)
-- [ ] Dashboard de resultados para profesor
-- [ ] Edición manual de puntajes
-- [ ] Página de resultados para estudiantes (acceso por link único)
-- [ ] Generación de PDF con resultados
-- [ ] Sistema de envío de emails (Resend)
-- [ ] Exportación a Excel
+### Fase 5: Corrección y Resultados ✅
+
+**5.1 Corrección Automática** ✅
+- [x] Corrección V/F con normalización (acepta: v, V, verdadero, true, f, F, falso, false, etc.)
+- [x] Corrección múltiple opción con normalización (acepta: a, A, a), A), (a), etc.)
+- [x] Disparo automático al cerrar prueba
+
+**5.2 Corrección con IA** ✅
+- [x] Corrección de preguntas de desarrollo con GPT-4o-mini
+- [x] Corrección de preguntas matemáticas con GPT-4o-mini
+- [x] Uso de pauta de corrección definida por profesor
+- [x] Feedback constructivo automático
+
+**5.3 Dashboard de Resultados (Profesor)** ✅
+- [x] Vista general con estadísticas (promedio, max, min)
+- [x] Lista de estudiantes con puntajes y porcentajes
+- [x] Detalle expandible por estudiante
+- [x] Visualización de respuestas vs respuestas correctas
+- [x] Ver pauta de corrección en modal (preguntas desarrollo)
+- [x] Edición manual de puntajes (solo enteros)
+- [x] Edición de feedback
+- [x] Marcar como revisado
+- [x] Selección múltiple de estudiantes
+
+**5.4 Envío de Resultados** ✅
+- [x] Envío de emails con Resend (código listo)
+- [x] Pendiente: verificar dominio en Resend para producción
+
+**5.5 Exportación** ✅
+- [x] Exportación a Excel (.xlsx)
+- [x] Incluye nombre, email, puntaje, porcentaje por estudiante
 
 ### Fase 6: Testing y Ajustes ⏳
 - [ ] Pruebas con 30 estudiantes simultáneos
 - [ ] Ajustes de performance
 - [ ] Pulir UX
 - [ ] Documentación final
+- [ ] Verificar dominio en Resend para emails de producción
+
+---
+
+## Mejoras Implementadas (Post-Fase 5)
+
+- [x] Normalización de saltos de línea al pegar pauta de corrección
+- [x] Botones "Cancelar" con texto visible (no gris claro)
+- [x] Input de duración permite borrar y editar libremente
+- [x] Scroll funcional en página de prueba del estudiante
+- [x] Texto legible en todos los inputs (text-gray-900)
+
+---
+
+## Pendientes Menores / Deuda Técnica
+
+- [ ] Página de resultados para estudiantes (acceso por link único)
+- [ ] Generación de PDF con resultados
+- [ ] Pruebas creadas antes del fix de alternativas necesitan corrección manual

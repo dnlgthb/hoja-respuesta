@@ -155,8 +155,51 @@ export const testsAPI = {
   },
 
   // Activar prueba (genera código)
-  activate: async (id: string): Promise<ActivateTestResponse> => {
-    const response = await apiClient.post<ActivateTestResponse>(`/api/tests/${id}/activate`);
+  activate: async (id: string, durationMinutes: number): Promise<ActivateTestResponse> => {
+    const response = await apiClient.post<ActivateTestResponse>(`/api/tests/${id}/activate`, {
+      durationMinutes,
+    });
+    return response.data;
+  },
+
+  // Cerrar prueba
+  close: async (id: string): Promise<Test> => {
+    const response = await apiClient.post<Test>(`/api/tests/${id}/close`);
+    return response.data;
+  },
+
+  // Duplicar prueba
+  duplicate: async (id: string, title?: string, courseId?: string): Promise<Test> => {
+    const response = await apiClient.post<Test>(`/api/tests/${id}/duplicate`, {
+      title,
+      courseId,
+    });
+    return response.data;
+  },
+
+  // Obtener resultados de una prueba
+  getResults: async (id: string) => {
+    const response = await apiClient.get(`/api/tests/${id}/results`);
+    return response.data;
+  },
+
+  // Actualizar una respuesta (puntaje/feedback)
+  updateAnswer: async (testId: string, answerId: string, data: { pointsEarned?: number; aiFeedback?: string }) => {
+    const response = await apiClient.put(`/api/tests/${testId}/answers/${answerId}`, data);
+    return response.data;
+  },
+
+  // Marcar intento como revisado
+  markReviewed: async (testId: string, attemptId: string) => {
+    const response = await apiClient.post(`/api/tests/${testId}/attempts/${attemptId}/mark-reviewed`);
+    return response.data;
+  },
+
+  // Enviar resultados por email
+  sendResults: async (testId: string, studentAttemptIds?: string[]) => {
+    const response = await apiClient.post(`/api/tests/${testId}/send-results`, {
+      studentAttemptIds,
+    });
     return response.data;
   },
 

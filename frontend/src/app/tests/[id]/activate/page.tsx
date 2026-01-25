@@ -7,7 +7,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { testsAPI } from '@/lib/api';
 import { Test } from '@/types';
-import { ArrowLeft, Copy, CheckCircle, Share2, AlertCircle, Users } from 'lucide-react';
+import { ArrowLeft, Copy, CheckCircle, Share2, AlertCircle, Users, Monitor } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 import { QRCodeCanvas } from 'qrcode.react';
 
@@ -349,6 +349,20 @@ export default function ActivateTestPage() {
                   Activa
                 </p>
               </div>
+            </div>
+
+            {/* Botón de Monitoreo */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <Link
+                href={ROUTES.TEST_MONITOR(testId)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-md hover:bg-primary-dark transition-colors font-medium"
+              >
+                <Monitor className="w-5 h-5" />
+                Ver Monitor de Estudiantes
+              </Link>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Monitorea el progreso de tus estudiantes en tiempo real
+              </p>
             </div>
           </div>
         </div>

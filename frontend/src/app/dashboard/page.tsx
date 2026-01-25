@@ -44,6 +44,16 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDuplicateTest = async (id: string) => {
+    try {
+      await testsAPI.duplicate(id);
+      // Recargar lista después de duplicar
+      await loadTests();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al duplicar la prueba');
+    }
+  };
+
   const handleNewTest = () => {
     router.push(ROUTES.NEW_TEST);
   };
@@ -114,6 +124,7 @@ export default function DashboardPage() {
                   key={test.id}
                   test={test}
                   onDelete={handleDeleteTest}
+                  onDuplicate={handleDuplicateTest}
                 />
               ))}
             </div>

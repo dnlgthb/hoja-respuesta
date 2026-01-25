@@ -17,7 +17,11 @@ const app: Application = express();
 
 // CORS - Permitir peticiones desde el frontend
 app.use(cors({
-  origin: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3002',
+    process.env.FRONTEND_URL || 'http://localhost:3000'
+  ],
   credentials: true,
 }));
 

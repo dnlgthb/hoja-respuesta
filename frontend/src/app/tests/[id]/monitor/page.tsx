@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { testsAPI } from '@/lib/api';
+import { ROUTES } from '@/config/constants';
 import {
   ArrowLeft,
   RefreshCw,
@@ -12,6 +13,8 @@ import {
   AlertCircle,
   Unlock,
   UserX,
+  StopCircle,
+  Timer,
 } from 'lucide-react';
 import type { MonitorStudent, TestAttemptsResponse } from '@/types';
 
@@ -31,6 +34,14 @@ export default function MonitorPage() {
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [confirmUnlock, setConfirmUnlock] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Timer state
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Close test state
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   // Cargar datos
   const loadData = useCallback(async (showRefreshIndicator = false) => {
@@ -66,6 +77,60 @@ export default function MonitorPage() {
 
     return () => clearInterval(interval);
   }, [autoRefresh, loadData]);
+
+  // Inicializar temporizador cuando se cargan los datos
+  useEffect(() => {
+    if (data?.test.timeRemainingSeconds !== null && data?.test.timeRemainingSeconds !== undefined) {
+      setTimeRemaining(data.test.timeRemainingSeconds);
+    }
+  }, [data?.test.timeRemainingSeconds]);
+
+  // Cuenta regresiva del temporizador
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0) return;
+
+    timerRef.current = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev === null || prev <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [timeRemaining !== null]);
+
+  // Cerrar prueba
+  const handleCloseTest = async () => {
+    try {
+      setIsClosing(true);
+      await testsAPI.close(testId);
+      setShowCloseConfirm(false);
+      await loadData();
+    } catch (err) {
+      if (err instanceof Error) {
+        alert(err.message);
+      }
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  // Formatear tiempo restante
+  const formatTimeRemaining = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Desbloquear estudiante
   const handleUnlock = async (attemptId: string) => {
@@ -154,6 +219,26 @@ export default function MonitorPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Timer - only show if test is active */}
+              {data.test.status === 'ACTIVE' && timeRemaining !== null && (
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
+                  timeRemaining <= 300 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  <Timer className="w-5 h-5" />
+                  <span className="font-mono font-bold text-lg">
+                    {formatTimeRemaining(timeRemaining)}
+                  </span>
+                </div>
+              )}
+
+              {/* Status badge */}
+              {data.test.status === 'CLOSED' && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg">
+                  <StopCircle className="w-4 h-4" />
+                  <span className="font-medium">Prueba cerrada</span>
+                </div>
+              )}
+
               {/* Toggle auto-refresh */}
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input
@@ -174,6 +259,28 @@ export default function MonitorPage() {
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 Actualizar
               </button>
+
+              {/* Close test button - only show if active */}
+              {data.test.status === 'ACTIVE' && (
+                <button
+                  onClick={() => setShowCloseConfirm(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  <StopCircle className="w-4 h-4" />
+                  Cerrar Prueba
+                </button>
+              )}
+
+              {/* Go to results button - only show if closed */}
+              {data.test.status === 'CLOSED' && (
+                <button
+                  onClick={() => router.push(ROUTES.TEST_RESULTS(testId))}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark transition-colors"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Ver Resultados
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -333,6 +440,67 @@ export default function MonitorPage() {
           La página se actualiza automáticamente cada 30 segundos
         </p>
       </div>
+
+      {/* Modal de confirmación de cierre */}
+      {showCloseConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 rounded-full">
+                <StopCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Cerrar Prueba
+              </h3>
+            </div>
+
+            <p className="text-gray-600 mb-6">
+              ¿Estás seguro de que deseas cerrar esta prueba? Esta acción:
+            </p>
+            <ul className="text-sm text-gray-600 mb-6 space-y-2">
+              <li className="flex items-start gap-2">
+                <span className="text-red-500 mt-0.5">•</span>
+                <span>Impedirá que nuevos estudiantes ingresen</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-500 mt-0.5">•</span>
+                <span>Entregará automáticamente las pruebas de estudiantes que aún estén respondiendo</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-500 mt-0.5">•</span>
+                <span>Iniciará el proceso de corrección</span>
+              </li>
+            </ul>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCloseConfirm(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                disabled={isClosing}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCloseTest}
+                disabled={isClosing}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+              >
+                {isClosing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Cerrando...
+                  </>
+                ) : (
+                  <>
+                    <StopCircle className="w-4 h-4" />
+                    Cerrar Prueba
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

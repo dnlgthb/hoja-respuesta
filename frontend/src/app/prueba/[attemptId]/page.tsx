@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { studentAPI } from '@/lib/api';
 import {
   FileText, User, CheckCircle, Circle, ChevronDown, ChevronUp,
-  Save, Loader2, AlertCircle, Send, X
+  Save, Loader2, AlertCircle, Send, X, Timer, Clock, Mail
 } from 'lucide-react';
 
 // ============================================
@@ -31,6 +31,7 @@ interface Question {
 interface AttemptData {
   id: string;
   studentName: string;
+  studentEmail: string | null;
   status: 'IN_PROGRESS' | 'SUBMITTED';
   submittedAt: string | null;
   resultsToken?: string;
@@ -39,6 +40,10 @@ interface AttemptData {
     id: string;
     title: string;
     pdfUrl: string | null;
+    status: string;
+    durationMinutes: number | null;
+    endsAt: string | null;
+    timeRemainingSeconds: number | null;
     questions: Question[];
   };
 }
@@ -62,6 +67,12 @@ export default function PruebaAttemptPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Timer state
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [showTimeUpModal, setShowTimeUpModal] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasAutoSubmittedRef = useRef(false);
 
   // Referencias para autosave
   const lastSavedAnswers = useRef<Record<string, string>>({});
@@ -103,6 +114,56 @@ export default function PruebaAttemptPage() {
 
     loadAttempt();
   }, [attemptId, router]);
+
+  // ============================================
+  // INICIALIZAR TEMPORIZADOR
+  // ============================================
+
+  useEffect(() => {
+    if (attemptData?.test.timeRemainingSeconds !== null && attemptData?.test.timeRemainingSeconds !== undefined) {
+      setTimeRemaining(attemptData.test.timeRemainingSeconds);
+    }
+  }, [attemptData?.test.timeRemainingSeconds]);
+
+  // Cuenta regresiva del temporizador
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0 || attemptData?.status === 'SUBMITTED') return;
+
+    timerRef.current = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev === null || prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [timeRemaining !== null, attemptData?.status]);
+
+  // Auto-submit cuando el tiempo termina
+  useEffect(() => {
+    if (timeRemaining === 0 && !hasAutoSubmittedRef.current && attemptData?.status === 'IN_PROGRESS') {
+      hasAutoSubmittedRef.current = true;
+      setShowTimeUpModal(true);
+      handleAutoSubmit();
+    }
+  }, [timeRemaining, attemptData?.status]);
+
+  // Formatear tiempo restante
+  const formatTimeRemaining = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // ============================================
   // FUNCIÓN DE GUARDADO
@@ -221,6 +282,24 @@ export default function PruebaAttemptPage() {
     saveAnswers(true);
   };
 
+  // Auto-submit cuando se acaba el tiempo
+  const handleAutoSubmit = async () => {
+    if (!deviceTokenRef.current) return;
+
+    try {
+      // Guardar respuestas actuales
+      await saveAnswers(true);
+
+      // Entregar
+      const result = await studentAPI.submit(attemptId, deviceTokenRef.current);
+
+      // Actualizar estado local
+      setAttemptData(prev => prev ? { ...prev, status: 'SUBMITTED', submittedAt: result.submittedAt, resultsToken: result.resultsToken } : null);
+    } catch (err) {
+      console.error('Error auto-submitting:', err);
+    }
+  };
+
   // ============================================
   // CALCULAR PROGRESO
   // ============================================
@@ -307,23 +386,26 @@ export default function PruebaAttemptPage() {
             </div>
           </div>
 
-          {/* Botón ver resultados */}
-          {attemptData.resultsToken && (
-            <button
-              onClick={() => router.push(`/prueba/resultado/${attemptData.resultsToken}`)}
-              className="w-full btn-primary py-3 text-lg font-semibold flex items-center justify-center gap-2"
-            >
-              <FileText className="w-5 h-5" />
-              Ver mis resultados
-            </button>
-          )}
-
-          {/* Mensaje si no hay token de resultados */}
-          {!attemptData.resultsToken && (
-            <p className="text-gray-500 text-sm">
-              Los resultados estarán disponibles cuando tu profesor los publique.
-            </p>
-          )}
+          {/* Mensaje sobre resultados */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+            <div className="flex items-start gap-3">
+              <Mail className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-blue-900 mb-1">
+                  Tus resultados serán enviados por correo
+                </p>
+                {attemptData.studentEmail ? (
+                  <p className="text-sm text-blue-700">
+                    Los resultados se enviarán a: <strong>{attemptData.studentEmail}</strong>
+                  </p>
+                ) : (
+                  <p className="text-sm text-blue-700">
+                    Tu profesor te notificará cuando los resultados estén disponibles.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -334,9 +416,9 @@ export default function PruebaAttemptPage() {
   // ============================================
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Header fijo */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex-shrink-0 shadow-sm z-10">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <FileText className="w-5 h-5 text-primary flex-shrink-0" />
@@ -345,6 +427,16 @@ export default function PruebaAttemptPage() {
             </h1>
           </div>
           <div className="flex items-center gap-4 flex-shrink-0">
+            {/* Temporizador */}
+            {timeRemaining !== null && timeRemaining > 0 && !isSubmitted && (
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-mono font-bold ${
+                timeRemaining <= 300 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-blue-100 text-blue-700'
+              }`}>
+                <Timer className="w-4 h-4" />
+                <span>{formatTimeRemaining(timeRemaining)}</span>
+              </div>
+            )}
+
             {/* Indicador de guardado */}
             {!isSubmitted && (
               <SaveIndicator status={saveStatus} onRetry={handleRetrySave} />
@@ -365,9 +457,9 @@ export default function PruebaAttemptPage() {
       </header>
 
       {/* Contenido principal */}
-      <div className="flex-1 flex flex-col lg:flex-row">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
         {/* PDF - Desktop: lado izquierdo, Mobile: colapsable */}
-        <div className="lg:w-1/2 lg:h-[calc(100vh-57px)] lg:sticky lg:top-[57px]">
+        <div className="lg:w-1/2 lg:h-full flex-shrink-0">
           {/* Toggle móvil */}
           <button
             onClick={() => setShowPdfMobile(!showPdfMobile)}
@@ -393,8 +485,8 @@ export default function PruebaAttemptPage() {
           </div>
         </div>
 
-        {/* Formulario de respuestas - Desktop: lado derecho, Mobile: abajo */}
-        <div className="lg:w-1/2 lg:h-[calc(100vh-57px)] lg:overflow-y-auto">
+        {/* Formulario de respuestas - Desktop: lado derecho con scroll, Mobile: abajo */}
+        <div className="flex-1 lg:w-1/2 overflow-y-auto">
           <div className="p-4 sm:p-6 space-y-6">
             {attemptData.test.questions.map((question) => (
               <QuestionCard
@@ -433,6 +525,14 @@ export default function PruebaAttemptPage() {
           isLoading={isSubmitting}
           answeredCount={answeredQuestions}
           totalCount={totalQuestions}
+        />
+      )}
+
+      {/* Modal de tiempo agotado */}
+      {showTimeUpModal && (
+        <TimeUpModal
+          onClose={() => setShowTimeUpModal(false)}
+          studentEmail={attemptData?.studentEmail}
         />
       )}
     </div>
@@ -736,5 +836,62 @@ function MathInput({ value, onChange, disabled }: InputProps) {
         disabled ? 'bg-gray-50 cursor-not-allowed' : ''
       }`}
     />
+  );
+}
+
+// ============================================
+// COMPONENTE: MODAL DE TIEMPO AGOTADO
+// ============================================
+
+interface TimeUpModalProps {
+  onClose: () => void;
+  studentEmail?: string | null;
+}
+
+function TimeUpModal({ onClose, studentEmail }: TimeUpModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 text-center">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+          <Clock className="w-8 h-8 text-amber-600" />
+        </div>
+
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          Prueba finalizada
+        </h2>
+
+        <p className="text-gray-600 mb-4">
+          El tiempo de la prueba ha terminado. Tus respuestas han sido guardadas y entregadas automáticamente.
+        </p>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left">
+          <div className="flex items-start gap-3">
+            <Mail className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-blue-900 text-sm mb-1">
+                Los resultados serán enviados por correo
+              </p>
+              {studentEmail ? (
+                <p className="text-xs text-blue-700">
+                  Se enviarán a: <strong>{studentEmail}</strong>
+                </p>
+              ) : (
+                <p className="text-xs text-blue-700">
+                  Tu profesor te notificará cuando estén disponibles.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full py-3 px-4 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 flex items-center justify-center gap-2"
+        >
+          <CheckCircle className="w-5 h-5" />
+          Entendido
+        </button>
+      </div>
+    </div>
   );
 }

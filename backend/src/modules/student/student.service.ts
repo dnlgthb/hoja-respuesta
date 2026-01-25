@@ -6,6 +6,7 @@ export interface JoinTestData {
   accessCode: string;
   courseStudentId: string;
   deviceToken?: string;
+  studentEmail?: string;
 }
 
 export interface JoinTestResponse {
@@ -48,6 +49,62 @@ export interface SaveAnswersData {
 export class StudentService {
 
   /**
+   * Verificar y cerrar pruebas expiradas automáticamente
+   */
+  private async checkAndCloseExpiredTest(test: any): Promise<boolean> {
+    if (test.status !== 'ACTIVE' || !test.ends_at) {
+      return false;
+    }
+
+    const now = new Date();
+    const endsAt = new Date(test.ends_at);
+
+    if (now > endsAt) {
+      // La prueba ha expirado, cerrarla automáticamente
+      await prisma.test.update({
+        where: { id: test.id },
+        data: {
+          status: 'CLOSED',
+          closed_at: now,
+        },
+      });
+
+      // Marcar todos los intentos en progreso como entregados
+      await prisma.studentAttempt.updateMany({
+        where: {
+          test_id: test.id,
+          status: 'IN_PROGRESS',
+        },
+        data: {
+          status: 'SUBMITTED',
+          submitted_at: now,
+        },
+      });
+
+      // Disparar corrección en background
+      this.runCorrectionInBackground(test.id);
+
+      return true; // Prueba fue cerrada
+    }
+
+    return false;
+  }
+
+  /**
+   * Ejecutar corrección en background (sin bloquear)
+   */
+  private async runCorrectionInBackground(testId: string) {
+    try {
+      const { correctionService } = require('../correction/correction.service');
+      correctionService.correctTest(testId).catch((err: any) => {
+        console.error(`Error correcting test ${testId}:`, err);
+      });
+    } catch (err) {
+      console.error('Error loading correction service:', err);
+    }
+  }
+
+  /**
    * Obtener estudiantes disponibles para una prueba
    */
   async getAvailableStudents(accessCode: string): Promise<AvailableStudentsResponse> {
@@ -67,6 +124,12 @@ export class StudentService {
 
     if (!test) {
       throw new Error('Código de prueba inválido');
+    }
+
+    // Verificar si la prueba ha expirado y cerrarla automáticamente
+    const wasClosed = await this.checkAndCloseExpiredTest(test);
+    if (wasClosed) {
+      throw new Error('La prueba ha terminado (tiempo agotado)');
     }
 
     if (test.status !== 'ACTIVE') {
@@ -116,7 +179,7 @@ export class StudentService {
    * Unirse a una prueba con código de acceso (usando lista cerrada)
    */
   async joinTest(data: JoinTestData): Promise<JoinTestResponse> {
-    const { accessCode, courseStudentId, deviceToken } = data;
+    const { accessCode, courseStudentId, deviceToken, studentEmail } = data;
 
     // 1. Buscar test por access_code (debe estar ACTIVE)
     const test = await prisma.test.findUnique({
@@ -199,6 +262,8 @@ export class StudentService {
             device_token: newDeviceToken,
             is_unlocked: false,
             last_activity_at: new Date(),
+            // Actualizar email si el estudiante proporciona uno nuevo
+            student_email: studentEmail || existingByCourseStudent.student_email,
           },
         });
         return this.formatJoinResponse(updatedAttempt.id, newDeviceToken, test);
@@ -210,12 +275,15 @@ export class StudentService {
     const newDeviceToken = crypto.randomUUID();
     const resultsToken = crypto.randomUUID();
 
+    // Usar email proporcionado por el estudiante, o el del curso como fallback
+    const emailToUse = studentEmail || courseStudent.student_email || null;
+
     const newAttempt = await prisma.studentAttempt.create({
       data: {
         test_id: test.id,
         course_student_id: courseStudentId,
         student_name: courseStudent.student_name,
-        student_email: courseStudent.student_email || null,
+        student_email: emailToUse,
         device_token: newDeviceToken,
         results_token: resultsToken,
         status: 'IN_PROGRESS',
@@ -246,6 +314,9 @@ export class StudentService {
             title: true,
             pdf_url: true,
             status: true,
+            duration_minutes: true,
+            activated_at: true,
+            ends_at: true,
             questions: {
               orderBy: { question_number: 'asc' },
               select: {
@@ -276,9 +347,18 @@ export class StudentService {
       data: { last_activity_at: new Date() },
     });
 
+    // Calcular tiempo restante
+    let timeRemainingSeconds: number | null = null;
+    if (attempt.test.status === 'ACTIVE' && attempt.test.ends_at) {
+      const now = new Date();
+      const endsAt = new Date(attempt.test.ends_at);
+      timeRemainingSeconds = Math.max(0, Math.floor((endsAt.getTime() - now.getTime()) / 1000));
+    }
+
     return {
       id: attempt.id,
       studentName: attempt.student_name,
+      studentEmail: attempt.student_email,
       status: attempt.status,
       submittedAt: attempt.submitted_at,
       answers: attempt.answers.map(a => ({
@@ -290,6 +370,9 @@ export class StudentService {
         title: attempt.test.title,
         pdfUrl: attempt.test.pdf_url,
         status: attempt.test.status,
+        durationMinutes: attempt.test.duration_minutes,
+        endsAt: attempt.test.ends_at,
+        timeRemainingSeconds,
         questions: attempt.test.questions.map(q => ({
           id: q.id,
           questionNumber: q.question_number,
@@ -393,7 +476,7 @@ export class StudentService {
    */
   async getTestAttempts(testId: string, teacherId: string) {
     // Verificar que el profesor sea dueño de la prueba
-    const test = await prisma.test.findUnique({
+    let test = await prisma.test.findUnique({
       where: { id: testId },
       include: {
         course: {
@@ -412,6 +495,24 @@ export class StudentService {
 
     if (test.teacher_id !== teacherId) {
       throw new Error('No tienes permiso para ver esta prueba');
+    }
+
+    // Verificar si la prueba ha expirado y cerrarla automáticamente
+    const wasClosed = await this.checkAndCloseExpiredTest(test);
+    if (wasClosed) {
+      // Recargar el test para obtener el estado actualizado
+      test = await prisma.test.findUnique({
+        where: { id: testId },
+        include: {
+          course: {
+            include: {
+              students: {
+                orderBy: { student_name: 'asc' },
+              },
+            },
+          },
+        },
+      }) as typeof test;
     }
 
     // Obtener todos los intentos
@@ -449,6 +550,14 @@ export class StudentService {
       };
     });
 
+    // Calcular tiempo restante si la prueba está activa
+    let timeRemainingSeconds: number | null = null;
+    if (test.status === 'ACTIVE' && test.ends_at) {
+      const now = new Date();
+      const endsAt = new Date(test.ends_at);
+      timeRemainingSeconds = Math.max(0, Math.floor((endsAt.getTime() - now.getTime()) / 1000));
+    }
+
     return {
       test: {
         id: test.id,
@@ -456,6 +565,10 @@ export class StudentService {
         status: test.status,
         courseName: test.course?.name || null,
         totalStudents: courseStudents.length,
+        durationMinutes: test.duration_minutes,
+        activatedAt: test.activated_at,
+        endsAt: test.ends_at,
+        timeRemainingSeconds,
       },
       students: studentsWithStatus,
       summary: {

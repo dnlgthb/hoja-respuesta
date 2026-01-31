@@ -169,6 +169,31 @@ export class StudentController {
       }
     }
   }
+
+  /**
+   * POST /api/student/attempt/:attemptId/paste-attempt
+   * Registrar intento de paste externo (silencioso)
+   */
+  async recordPasteAttempt(req: Request, res: Response): Promise<void> {
+    try {
+      const { attemptId } = req.params;
+      const deviceToken = req.headers['x-device-token'] as string;
+
+      if (!deviceToken) {
+        res.status(401).json({ error: 'Token de dispositivo requerido' });
+        return;
+      }
+
+      await studentService.recordPasteAttempt(attemptId, deviceToken);
+
+      // Respuesta silenciosa - no revelar al estudiante que se registró
+      res.status(200).json({ success: true });
+
+    } catch (error) {
+      // Silencioso - no revelar errores al estudiante
+      res.status(200).json({ success: true });
+    }
+  }
 }
 
 // Exportar instancia única del controlador

@@ -6,7 +6,7 @@ import { env } from './env';
 const resend = new Resend(env.RESEND_API_KEY);
 
 // Email remitente (debe estar verificado en Resend)
-const FROM_EMAIL = 'Mi Hoja <resultados@mihoja.cl>';
+const FROM_EMAIL = 'Aproba <resultados@aproba.ai>';
 
 interface StudentResult {
   studentName: string;
@@ -17,6 +17,10 @@ interface StudentResult {
   maxPoints: number;
   percentage: number;
   submittedAt: string;
+  // Campos de nota (opcionales)
+  grade?: number;
+  passed?: boolean;
+  passingThreshold?: number;
   answers: Array<{
     questionNumber: number;
     questionText: string;
@@ -104,6 +108,29 @@ function generateResultsEmailHTML(result: StudentResult): string {
 
       <!-- Score card -->
       <div style="background: #f9fafb; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px; border: 2px solid ${scoreColor};">
+        ${result.grade !== undefined ? `
+        <div style="display: flex; justify-content: center; gap: 32px; align-items: center;">
+          <div>
+            <p style="color: #6b7280; margin: 0 0 8px; font-size: 14px;">Puntaje obtenido</p>
+            <p style="color: ${scoreColor}; font-size: 36px; font-weight: 700; margin: 0;">
+              ${result.totalPoints}<span style="font-size: 20px; color: #9ca3af;">/${result.maxPoints}</span>
+            </p>
+            <p style="color: ${scoreColor}; font-size: 16px; margin: 4px 0 0; font-weight: 600;">
+              ${result.percentage}%
+            </p>
+          </div>
+          <div style="border-left: 2px solid #e5e7eb; height: 80px;"></div>
+          <div>
+            <p style="color: #6b7280; margin: 0 0 8px; font-size: 14px;">Nota final</p>
+            <p style="color: ${result.passed ? '#16a34a' : '#dc2626'}; font-size: 48px; font-weight: 700; margin: 0;">
+              ${result.grade.toFixed(1)}
+            </p>
+            <p style="color: ${result.passed ? '#16a34a' : '#dc2626'}; font-size: 14px; margin: 4px 0 0; font-weight: 600;">
+              ${result.passed ? 'Aprobado' : 'Reprobado'}
+            </p>
+          </div>
+        </div>
+        ` : `
         <p style="color: #6b7280; margin: 0 0 8px; font-size: 14px;">Puntaje obtenido</p>
         <p style="color: ${scoreColor}; font-size: 48px; font-weight: 700; margin: 0;">
           ${result.totalPoints}<span style="font-size: 24px; color: #9ca3af;">/${result.maxPoints}</span>
@@ -111,6 +138,7 @@ function generateResultsEmailHTML(result: StudentResult): string {
         <p style="color: ${scoreColor}; font-size: 18px; margin: 8px 0 0; font-weight: 600;">
           ${result.percentage}%
         </p>
+        `}
       </div>
 
       <!-- Info -->
@@ -137,7 +165,7 @@ function generateResultsEmailHTML(result: StudentResult): string {
       <!-- Footer -->
       <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center;">
         <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-          Este correo fue enviado automáticamente por Mi Hoja.
+          Este correo fue enviado automáticamente por Aproba.
         </p>
         <p style="color: #9ca3af; font-size: 12px; margin: 4px 0;">
           Si tienes dudas sobre tus resultados, contacta a tu profesor.

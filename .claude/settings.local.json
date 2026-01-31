@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZWFjaGVySWQiOiJjbWtvN2w4b3UwMDAwZmhjOGRuNjlkbzA4IiwiaWF0IjoxNzY5MDExMTkzLCJleHAiOjE3Njk2MTU5OTN9.cy2FySC70gV-HKDtdU4krlL9QpCS-bg3z2zA1pLSKnk\")",
+      "Bash(TEST_ID=\"cmko7lis60002fhc80f2ctep3\":*)",
+      "Bash(npx tsx:*)",
+      "Bash(ATTEMPT_ID=\"cmko7oekv0001fh6otyd1b5fb\")",
+      "Bash(DEVICE_TOKEN=\"7bcc89f0-6f12-4526-a935-2544e7e4989f\":*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFase 4 parcial: Sistema de cursos, ingreso estudiantes con lista cerrada y monitoreo\n\nBackend:\n- Módulo courses: CRUD cursos + upload estudiantes con IA \\(GPT-4o-mini\\)\n- Módulo student: endpoints públicos para ingreso con lista cerrada\n- Monitoreo: endpoints para ver intentos y desbloquear estudiantes\n- Migración Prisma: modelos Course y CourseStudent\n\nFrontend:\n- Páginas de cursos: lista, crear, detalle con estudiantes\n- Nuevo flujo de ingreso estudiante: código → selector nombre → confirmar \"CONFIRMO\"\n- Página de monitoreo para profesor con auto-refresh\n- Mejoras UI: texto más oscuro en inputs y tablas\n\nDocumentación:\n- Actualizado ROADMAP, ARQUITECTURA y DECISIONES_TECNICAS\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(npx next lint)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(git commit:*)",
+      "Bash(npx prisma generate)",
+      "Bash(powershell -Command:*)",
+      "Bash(Remove-Item -Path \"tmpclaude-*\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Path \"backend\\\\tmpclaude-*\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Path \"nul\" -Force -ErrorAction SilentlyContinue)"
+    ]
+  }
+}

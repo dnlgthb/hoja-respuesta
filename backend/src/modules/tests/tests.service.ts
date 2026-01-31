@@ -3,6 +3,7 @@ import prisma from '../../config/database';
 import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
 import { analyzeDocument } from '../../config/openai';
+import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
 const { extractTextFromPDF } = require('../../utils/pdfExtractor');
 
 
@@ -16,6 +17,13 @@ export interface CreateTestData {
 export interface UpdateTestData {
   title?: string;
   courseId?: string;
+  // Opciones de corrección
+  requireFalseJustification?: boolean;
+  falseJustificationPenalty?: number;
+  evaluateSpelling?: boolean;
+  evaluateWriting?: boolean;
+  spellingPoints?: number | null;
+  writingPoints?: number | null;
 }
 
 export class TestsService {
@@ -147,13 +155,18 @@ export class TestsService {
    * Ejecutar corrección en background (sin bloquear)
    */
   private runCorrectionInBackground(testId: string) {
+    console.log(`\n🔄 INICIANDO CORRECCIÓN EN BACKGROUND para test: ${testId}`);
     try {
       const { correctionService } = require('../correction/correction.service');
-      correctionService.correctTest(testId).catch((err: any) => {
-        console.error(`Error correcting test ${testId}:`, err);
-      });
+      correctionService.correctTest(testId)
+        .then((result: any) => {
+          console.log(`✅ CORRECCIÓN COMPLETADA para test ${testId}:`, result);
+        })
+        .catch((err: any) => {
+          console.error(`❌ ERROR en corrección de test ${testId}:`, err);
+        });
     } catch (err) {
-      console.error('Error loading correction service:', err);
+      console.error('❌ Error loading correction service:', err);
     }
   }
   
@@ -242,6 +255,13 @@ export class TestsService {
       data: {
         title: data.title,
         course_id: data.courseId !== undefined ? data.courseId : undefined,
+        // Opciones de corrección
+        require_false_justification: data.requireFalseJustification,
+        false_justification_penalty: data.falseJustificationPenalty,
+        evaluate_spelling: data.evaluateSpelling,
+        evaluate_writing: data.evaluateWriting,
+        spelling_points: data.spellingPoints,
+        writing_points: data.writingPoints,
       },
       include: {
         course: {
@@ -364,10 +384,13 @@ await prisma.question.deleteMany({
 const createdQuestions = [];
 for (let i = 0; i < questions.length; i++) {
   const q = questions[i];
+  // El campo "number" de la IA puede ser string ("I.a") o número
+  const questionLabel = q.number !== undefined ? String(q.number) : String(i + 1);
   const created = await prisma.question.create({
     data: {
       test_id: testId,
-      question_number: i + 1,
+      question_number: i + 1, // Orden secuencial para ordenamiento
+      question_label: questionLabel, // Nomenclatura visible (I.a, II.b, etc.)
       type: q.type as QuestionType,
       question_text: q.text,
       points: q.points || 1,
@@ -536,10 +559,9 @@ for (let i = 0; i < questions.length; i++) {
       },
     });
 
-    // Disparar corrección automática (en background para no bloquear)
-    this.runCorrection(testId).catch(err => {
-      console.error('Error running correction:', err);
-    });
+    // Ejecutar corrección en BACKGROUND (no bloquea la respuesta)
+    // La corrección continuará aunque el profesor cierre la página
+    this.runCorrectionInBackground(testId);
 
     return closedTest;
   }
@@ -547,7 +569,12 @@ for (let i = 0; i < questions.length; i++) {
   /**
    * Enviar resultados por email a estudiantes seleccionados
    */
-  async sendResults(testId: string, teacherId: string, studentAttemptIds?: string[]): Promise<{
+  async sendResults(
+    testId: string,
+    teacherId: string,
+    studentAttemptIds?: string[],
+    includeGrade: boolean = true
+  ): Promise<{
     sent: number;
     failed: number;
     errors: string[];
@@ -615,6 +642,7 @@ for (let i = 0; i < questions.length; i++) {
       where: { test_id: testId },
     });
     const maxPoints = questions.reduce((sum, q) => sum + Number(q.points), 0);
+    const passingThreshold = test.passing_threshold;
 
     let sent = 0;
     let failed = 0;
@@ -631,6 +659,14 @@ for (let i = 0; i < questions.length; i++) {
       }
 
       const totalPoints = attempt.answers.reduce((sum, a) => sum + (Number(a.points_earned) || 0), 0);
+      const percentage = maxPoints > 0 ? (totalPoints / maxPoints) * 100 : 0;
+
+      // Calcular nota si se debe incluir
+      let gradeInfo: { grade: number; passed: boolean } | null = null;
+      if (includeGrade) {
+        const gradeResult = calculateChileanGrade(percentage, passingThreshold);
+        gradeInfo = { grade: gradeResult.grade, passed: gradeResult.passed };
+      }
 
       const result = {
         studentName: attempt.student_name,
@@ -639,8 +675,12 @@ for (let i = 0; i < questions.length; i++) {
         courseName: test.course ? `${test.course.name} (${test.course.year})` : 'Sin curso',
         totalPoints: Math.round(totalPoints * 100) / 100,
         maxPoints,
-        percentage: Math.round((totalPoints / maxPoints) * 10000) / 100,
+        percentage: Math.round(percentage * 100) / 100,
         submittedAt: attempt.submitted_at?.toISOString() || new Date().toISOString(),
+        // Información de nota (opcional)
+        grade: gradeInfo?.grade,
+        passed: gradeInfo?.passed,
+        passingThreshold: includeGrade ? passingThreshold : undefined,
         answers: attempt.answers.map(a => ({
           questionNumber: a.question.question_number,
           questionText: a.question.question_text,
@@ -773,6 +813,8 @@ for (let i = 0; i < questions.length; i++) {
     // ============================================
     // HOJA 2: Resumen
     // ============================================
+    const passingThreshold = test.passing_threshold;
+
     const summaryData: any[][] = [
       ['Resumen de Resultados'],
       [],
@@ -780,47 +822,54 @@ for (let i = 0; i < questions.length; i++) {
       ['Curso', test.course ? `${test.course.name} (${test.course.year})` : 'Sin curso'],
       ['Total preguntas', test.questions.length],
       ['Puntaje máximo', maxPossiblePoints],
+      ['Exigencia', `${passingThreshold}%`],
       [],
-      ['Estudiante', 'Puntaje', 'Porcentaje', 'Nota (escala 1-7)'],
+      ['Estudiante', 'Puntaje', 'Porcentaje', 'Nota', 'Estado', 'Ortografía', 'Redacción', 'Intentos Paste'],
     ];
 
     // Calcular estadísticas
     const scores: number[] = [];
+    const grades: number[] = [];
 
     for (const attempt of attempts) {
       const total = attempt.answers.reduce((sum, a) => sum + (Number(a.points_earned) || 0), 0);
       const percentage = maxPossiblePoints > 0 ? (total / maxPossiblePoints) * 100 : 0;
 
-      // Calcular nota en escala 1-7 (60% = 4.0)
-      let nota: number;
-      if (percentage >= 60) {
-        nota = 4.0 + ((percentage - 60) / 40) * 3;
-      } else {
-        nota = 1.0 + (percentage / 60) * 3;
-      }
-      nota = Math.round(nota * 10) / 10;
+      // Calcular nota usando la función de cálculo chileno
+      const gradeResult = calculateChileanGrade(percentage, passingThreshold);
 
       summaryData.push([
         attempt.student_name,
         Math.round(total * 100) / 100,
         `${Math.round(percentage * 100) / 100}%`,
-        nota,
+        gradeResult.grade,
+        gradeResult.passed ? 'Aprobado' : 'Reprobado',
+        attempt.spelling_score !== null ? Number(attempt.spelling_score) : '-',
+        attempt.writing_score !== null ? Number(attempt.writing_score) : '-',
+        attempt.paste_attempts || 0,
       ]);
 
       scores.push(total);
+      grades.push(gradeResult.grade);
     }
 
     // Estadísticas generales
     const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
     const minScore = scores.length > 0 ? Math.min(...scores) : 0;
+    const gradeStats = calculateGradeStats(grades);
 
     summaryData.push([]);
     summaryData.push(['Estadísticas']);
     summaryData.push(['Total estudiantes', attempts.length]);
-    summaryData.push(['Promedio', Math.round(avgScore * 100) / 100]);
+    summaryData.push(['Promedio puntaje', Math.round(avgScore * 100) / 100]);
     summaryData.push(['Puntaje máximo obtenido', maxScore]);
     summaryData.push(['Puntaje mínimo obtenido', minScore]);
+    summaryData.push(['Promedio notas', gradeStats.average]);
+    summaryData.push(['Nota máxima', gradeStats.max]);
+    summaryData.push(['Nota mínima', gradeStats.min]);
+    summaryData.push(['Aprobados', `${gradeStats.passedCount} (${gradeStats.passRate}%)`]);
+    summaryData.push(['Reprobados', gradeStats.failedCount]);
 
     // Crear workbook
     const workbook = XLSX.utils.book_new();
@@ -921,10 +970,14 @@ for (let i = 0; i < questions.length; i++) {
 
     // Calcular estadísticas
     const maxPossiblePoints = test.questions.reduce((sum, q) => sum + Number(q.points), 0);
+    const passingThreshold = test.passing_threshold;
 
     const studentsWithScores = attempts.map(attempt => {
       const totalPoints = attempt.answers.reduce((sum, a) => sum + (Number(a.points_earned) || 0), 0);
       const percentage = maxPossiblePoints > 0 ? (totalPoints / maxPossiblePoints) * 100 : 0;
+
+      // Calcular nota chilena
+      const gradeResult = calculateChileanGrade(percentage, passingThreshold);
 
       return {
         id: attempt.id,
@@ -937,6 +990,13 @@ for (let i = 0; i < questions.length; i++) {
         totalPoints: Math.round(totalPoints * 100) / 100, // Redondear a 2 decimales
         maxPoints: maxPossiblePoints,
         percentage: Math.round(percentage * 100) / 100,
+        grade: gradeResult.grade,
+        passed: gradeResult.passed,
+        // Nuevos campos de evaluación
+        spellingScore: attempt.spelling_score !== null ? Number(attempt.spelling_score) : null,
+        writingScore: attempt.writing_score !== null ? Number(attempt.writing_score) : null,
+        spellingWritingFeedback: attempt.spelling_writing_feedback,
+        pasteAttempts: attempt.paste_attempts,
         answers: attempt.answers.map(a => ({
           id: a.id,
           questionId: a.question_id,
@@ -947,6 +1007,7 @@ for (let i = 0; i < questions.length; i++) {
           correctAnswer: a.question.correct_answer,
           correctionCriteria: a.question.correction_criteria,
           answerValue: a.answer_value,
+          justification: a.justification,
           pointsEarned: a.points_earned !== null ? Number(a.points_earned) : null,
           aiFeedback: a.ai_feedback,
         })),
@@ -955,6 +1016,9 @@ for (let i = 0; i < questions.length; i++) {
 
     // Calcular estadísticas generales
     const scores = studentsWithScores.map(s => s.totalPoints);
+    const grades = studentsWithScores.map(s => s.grade);
+    const gradeStats = calculateGradeStats(grades);
+
     const summary = {
       totalStudents: studentsWithScores.length,
       averageScore: scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0,
@@ -963,6 +1027,13 @@ for (let i = 0; i < questions.length; i++) {
       maxPossiblePoints,
       reviewedCount: studentsWithScores.filter(s => s.reviewedAt).length,
       sentCount: studentsWithScores.filter(s => s.resultsSentAt).length,
+      // Estadísticas de notas
+      averageGrade: gradeStats.average,
+      maxGrade: gradeStats.max,
+      minGrade: gradeStats.min,
+      passedCount: gradeStats.passedCount,
+      failedCount: gradeStats.failedCount,
+      passRate: gradeStats.passRate,
     };
 
     return {
@@ -973,6 +1044,8 @@ for (let i = 0; i < questions.length; i++) {
         course: test.course,
         questionsCount: test.questions.length,
         closedAt: test.closed_at,
+        passingThreshold,
+        correctionCompletedAt: test.correction_completed_at,
       },
       students: studentsWithScores,
       summary,
@@ -1079,6 +1152,41 @@ for (let i = 0; i < questions.length; i++) {
     return {
       success: true,
       reviewedAt: updatedAttempt.reviewed_at,
+    };
+  }
+
+  /**
+   * Actualizar la exigencia (porcentaje mínimo para nota 4.0)
+   */
+  async updatePassingThreshold(testId: string, teacherId: string, passingThreshold: number) {
+    // Verificar que la prueba pertenece al profesor
+    const test = await prisma.test.findFirst({
+      where: {
+        id: testId,
+        teacher_id: teacherId,
+      },
+    });
+
+    if (!test) {
+      throw new Error('Prueba no encontrada');
+    }
+
+    // Validar rango de exigencia (50-70%)
+    if (passingThreshold < 50 || passingThreshold > 70) {
+      throw new Error('La exigencia debe estar entre 50% y 70%');
+    }
+
+    // Actualizar la exigencia
+    const updatedTest = await prisma.test.update({
+      where: { id: testId },
+      data: {
+        passing_threshold: passingThreshold,
+      },
+    });
+
+    return {
+      success: true,
+      passingThreshold: updatedTest.passing_threshold,
     };
   }
 
@@ -1194,17 +1302,20 @@ for (let i = 0; i < questions.length; i++) {
     questionId: string,
     teacherId: string,
     updates: {
+      question_label?: string;
       question_text?: string;
       type?: QuestionType;
       points?: number;
       correct_answer?: string;
       options?: string[];
       correction_criteria?: string;
+      require_units?: boolean;
+      unit_penalty?: number;
     }
   ) {
     // Verificar que la prueba pertenezca al profesor
     const test = await this.getTestById(testId, teacherId);
-    
+
     // Verificar que la pregunta pertenezca a la prueba
     const question = await prisma.question.findFirst({
       where: {
@@ -1212,18 +1323,109 @@ for (let i = 0; i < questions.length; i++) {
         test_id: testId,
       },
     });
-    
+
     if (!question) {
       throw new Error('Pregunta no encontrada');
     }
-    
+
     // Actualizar la pregunta
     const updatedQuestion = await prisma.question.update({
       where: { id: questionId },
       data: updates,
     });
-    
+
     return updatedQuestion;
+  }
+
+  /**
+   * Crear una nueva pregunta manualmente
+   */
+  async createQuestion(
+    testId: string,
+    teacherId: string,
+    data: {
+      question_label?: string;
+      question_text: string;
+      type: QuestionType;
+      points?: number;
+      options?: string[];
+      correct_answer?: string;
+      correction_criteria?: string;
+    }
+  ) {
+    // Verificar que la prueba pertenezca al profesor
+    const test = await this.getTestById(testId, teacherId);
+
+    // Verificar que la prueba esté en borrador
+    if (test.status !== 'DRAFT') {
+      throw new Error('Solo se pueden agregar preguntas a pruebas en borrador');
+    }
+
+    // Obtener el último número de pregunta
+    const lastQuestion = await prisma.question.findFirst({
+      where: { test_id: testId },
+      orderBy: { question_number: 'desc' },
+    });
+
+    const nextNumber = (lastQuestion?.question_number || 0) + 1;
+
+    // Crear la pregunta
+    const newQuestion = await prisma.question.create({
+      data: {
+        test_id: testId,
+        question_number: nextNumber,
+        question_label: data.question_label || String(nextNumber),
+        question_text: data.question_text,
+        type: data.type,
+        points: data.points || 1,
+        options: data.options || null,
+        correct_answer: data.correct_answer || null,
+        correction_criteria: data.correction_criteria || null,
+      },
+    });
+
+    return newQuestion;
+  }
+
+  /**
+   * Reordenar preguntas
+   */
+  async reorderQuestions(
+    testId: string,
+    teacherId: string,
+    questionIds: string[]
+  ) {
+    // Verificar que la prueba pertenezca al profesor
+    const test = await this.getTestById(testId, teacherId);
+
+    // Verificar que la prueba esté en borrador
+    if (test.status !== 'DRAFT') {
+      throw new Error('Solo se pueden reordenar preguntas en pruebas en borrador');
+    }
+
+    // Primero asignar números temporales negativos para evitar conflictos de unique constraint
+    for (let i = 0; i < questionIds.length; i++) {
+      await prisma.question.update({
+        where: { id: questionIds[i] },
+        data: { question_number: -(i + 1) },
+      });
+    }
+
+    // Luego asignar los números correctos
+    for (let i = 0; i < questionIds.length; i++) {
+      await prisma.question.update({
+        where: { id: questionIds[i] },
+        data: { question_number: i + 1 },
+      });
+    }
+
+    // Devolver las preguntas reordenadas
+    const questions = await prisma.question.findMany({
+      where: { test_id: testId },
+      orderBy: { question_number: 'asc' },
+    });
+
+    return questions;
   }
 
   /**
@@ -1232,7 +1434,7 @@ for (let i = 0; i < questions.length; i++) {
   async deleteQuestion(testId: string, questionId: string, teacherId: string) {
     // Verificar que la prueba pertenezca al profesor
     const test = await this.getTestById(testId, teacherId);
-    
+
     // Verificar que la pregunta pertenezca a la prueba
     const question = await prisma.question.findFirst({
       where: {
@@ -1240,16 +1442,29 @@ for (let i = 0; i < questions.length; i++) {
         test_id: testId,
       },
     });
-    
+
     if (!question) {
       throw new Error('Pregunta no encontrada');
     }
-    
+
     // Eliminar la pregunta
     await prisma.question.delete({
       where: { id: questionId },
     });
-    
+
+    // Reordenar las preguntas restantes
+    const remainingQuestions = await prisma.question.findMany({
+      where: { test_id: testId },
+      orderBy: { question_number: 'asc' },
+    });
+
+    for (let i = 0; i < remainingQuestions.length; i++) {
+      await prisma.question.update({
+        where: { id: remainingQuestions[i].id },
+        data: { question_number: i + 1 },
+      });
+    }
+
     return { message: 'Pregunta eliminada correctamente' };
   }
 }

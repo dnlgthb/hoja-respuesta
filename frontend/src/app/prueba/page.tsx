@@ -183,7 +183,7 @@ export default function PruebaPage() {
 
   if (step === 'code') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+      <div className="min-h-screen flex items-center justify-center bg-[#FBF9F3] px-4 py-8">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
@@ -248,7 +248,7 @@ export default function PruebaPage() {
           </div>
 
           <p className="text-center text-xs text-gray-400 mt-6">
-            Mi Hoja - Plataforma de evaluaciones digitales
+            Aproba - Plataforma de evaluaciones digitales
           </p>
         </div>
       </div>
@@ -263,7 +263,7 @@ export default function PruebaPage() {
     const allTaken = availableStudents.length === 0 && students.length > 0;
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+      <div className="min-h-screen flex items-center justify-center bg-[#FBF9F3] px-4 py-8">
         <div className="w-full max-w-lg">
           {/* Header */}
           <div className="text-center mb-6">
@@ -376,7 +376,7 @@ export default function PruebaPage() {
     const isConfirmValid = confirmText === 'CONFIRMO';
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+      <div className="min-h-screen flex items-center justify-center bg-[#FBF9F3] px-4 py-8">
         <div className="w-full max-w-md">
           {/* Card */}
           <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8">

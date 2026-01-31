@@ -1,4 +1,4 @@
-﻿# Hoja de Respuesta Digital
+﻿# Aproba
 
 Plataforma que transforma pruebas Word/PDF en evaluaciones digitales autocalificables.
 

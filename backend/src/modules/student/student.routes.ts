@@ -21,4 +21,7 @@ router.post('/attempt/:attemptId/save', (req, res) => studentController.saveAnsw
 // Entregar prueba (requiere x-device-token header)
 router.post('/attempt/:attemptId/submit', (req, res) => studentController.submitAttempt(req, res));
 
+// Registrar intento de paste externo (requiere x-device-token header)
+router.post('/attempt/:attemptId/paste-attempt', (req, res) => studentController.recordPasteAttempt(req, res));
+
 export default router;

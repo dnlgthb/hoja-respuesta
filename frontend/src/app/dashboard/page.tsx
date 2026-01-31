@@ -60,7 +60,7 @@ export default function DashboardPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
 
         <div className="max-w-7xl mx-auto px-6 py-8">

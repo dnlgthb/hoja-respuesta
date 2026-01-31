@@ -44,6 +44,7 @@ export interface AvailableStudentsResponse {
 export interface SaveAnswersData {
   questionId: string;
   answerValue: string;
+  justification?: string; // Para V/F con justificación
 }
 
 export class StudentService {
@@ -191,6 +192,7 @@ export class StudentService {
           select: {
             id: true,
             question_number: true,
+            question_label: true,
             type: true,
             question_text: true,
             points: true,
@@ -306,6 +308,7 @@ export class StudentService {
             id: true,
             question_id: true,
             answer_value: true,
+            justification: true,
           },
         },
         test: {
@@ -317,11 +320,13 @@ export class StudentService {
             duration_minutes: true,
             activated_at: true,
             ends_at: true,
+            require_false_justification: true,
             questions: {
               orderBy: { question_number: 'asc' },
               select: {
                 id: true,
                 question_number: true,
+                question_label: true,
                 type: true,
                 question_text: true,
                 points: true,
@@ -364,6 +369,7 @@ export class StudentService {
       answers: attempt.answers.map(a => ({
         questionId: a.question_id,
         answerValue: a.answer_value,
+        justification: a.justification,
       })),
       test: {
         id: attempt.test.id,
@@ -373,9 +379,11 @@ export class StudentService {
         durationMinutes: attempt.test.duration_minutes,
         endsAt: attempt.test.ends_at,
         timeRemainingSeconds,
+        requireFalseJustification: attempt.test.require_false_justification,
         questions: attempt.test.questions.map(q => ({
           id: q.id,
           questionNumber: q.question_number,
+          questionLabel: q.question_label || String(q.question_number),
           type: q.type,
           questionText: q.question_text,
           points: Number(q.points),
@@ -417,11 +425,13 @@ export class StudentService {
         },
         update: {
           answer_value: answer.answerValue,
+          justification: answer.justification || null,
         },
         create: {
           student_attempt_id: attemptId,
           question_id: answer.questionId,
           answer_value: answer.answerValue,
+          justification: answer.justification || null,
         },
       });
     }
@@ -569,6 +579,7 @@ export class StudentService {
         activatedAt: test.activated_at,
         endsAt: test.ends_at,
         timeRemainingSeconds,
+        correctionCompletedAt: test.correction_completed_at,
       },
       students: studentsWithStatus,
       summary: {
@@ -611,6 +622,31 @@ export class StudentService {
   }
 
   /**
+   * Registrar intento de paste externo (silencioso)
+   */
+  async recordPasteAttempt(attemptId: string, deviceToken: string): Promise<void> {
+    const attempt = await prisma.studentAttempt.findUnique({
+      where: { id: attemptId },
+    });
+
+    if (!attempt || attempt.device_token !== deviceToken) {
+      return; // Silencioso - no revelar errores
+    }
+
+    if (attempt.status === 'SUBMITTED') {
+      return; // No registrar si ya entregó
+    }
+
+    // Incrementar contador de paste
+    await prisma.studentAttempt.update({
+      where: { id: attemptId },
+      data: {
+        paste_attempts: { increment: 1 },
+      },
+    });
+  }
+
+  /**
    * Helper para formatear respuesta de join
    */
   private formatJoinResponse(attemptId: string, deviceToken: string, test: any): JoinTestResponse {
@@ -624,6 +660,7 @@ export class StudentService {
         questions: test.questions.map((q: any) => ({
           id: q.id,
           questionNumber: q.question_number,
+          questionLabel: q.question_label || String(q.question_number),
           type: q.type,
           questionText: q.question_text,
           points: Number(q.points),

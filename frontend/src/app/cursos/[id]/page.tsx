@@ -212,7 +212,7 @@ export default function CursoDetallePage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -228,7 +228,7 @@ export default function CursoDetallePage() {
   if (error || !course) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="max-w-4xl mx-auto px-6 py-8">
             <div className="p-4 bg-red-50 border border-red-200 rounded-md">
@@ -242,7 +242,7 @@ export default function CursoDetallePage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
 
         <div className="max-w-4xl mx-auto px-6 py-8">

@@ -17,6 +17,8 @@ router.put('/:id', (req, res) => testsController.updateTest(req, res));
 router.delete('/:id', (req, res) => testsController.deleteTest(req, res));
 
 // CRUD de preguntas
+router.post('/:id/questions', (req, res) => testsController.createQuestion(req, res));
+router.put('/:id/questions/reorder', (req, res) => testsController.reorderQuestions(req, res));
 router.put('/:id/questions/:questionId', (req, res) => testsController.updateQuestion(req, res));
 router.delete('/:id/questions/:questionId', (req, res) => testsController.deleteQuestion(req, res));
 
@@ -37,6 +39,7 @@ router.post('/:id/duplicate', (req, res) => testsController.duplicateTest(req, r
 router.get('/:id/results', (req, res) => testsController.getTestResults(req, res));
 router.put('/:id/answers/:answerId', (req, res) => testsController.updateAnswer(req, res));
 router.post('/:id/attempts/:attemptId/mark-reviewed', (req, res) => testsController.markAttemptReviewed(req, res));
+router.put('/:id/passing-threshold', (req, res) => testsController.updatePassingThreshold(req, res));
 router.post('/:id/send-results', (req, res) => testsController.sendResults(req, res));
 router.get('/:id/export', (req, res) => testsController.exportResults(req, res));
 

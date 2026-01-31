@@ -98,7 +98,7 @@ export default function ActivateTestPage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -115,7 +115,7 @@ export default function ActivateTestPage() {
   if (error === 'NO_COURSE') {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="max-w-3xl mx-auto px-6 py-8">
             <button
@@ -167,7 +167,7 @@ export default function ActivateTestPage() {
   if (error || !test) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="max-w-3xl mx-auto px-6 py-8">
             <button
@@ -191,7 +191,7 @@ export default function ActivateTestPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
 
         <div className="max-w-3xl mx-auto px-6 py-8">

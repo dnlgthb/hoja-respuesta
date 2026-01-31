@@ -34,6 +34,19 @@ export interface Test {
   updatedAt?: string;
   updated_at?: string; // Backend usa snake_case
   questions?: Question[];
+  // Opciones de corrección
+  requireFalseJustification?: boolean;
+  require_false_justification?: boolean;
+  falseJustificationPenalty?: number;
+  false_justification_penalty?: number;
+  evaluateSpelling?: boolean;
+  evaluate_spelling?: boolean;
+  evaluateWriting?: boolean;
+  evaluate_writing?: boolean;
+  spellingPoints?: number | null;
+  spelling_points?: number | null;
+  writingPoints?: number | null;
+  writing_points?: number | null;
 }
 
 export interface Question {
@@ -42,6 +55,8 @@ export interface Question {
   test_id?: string; // Backend usa snake_case
   questionNumber?: number;
   question_number?: number; // Backend usa snake_case
+  questionLabel?: string;
+  question_label?: string; // Nomenclatura visible (I.a, II.b, etc.)
   questionText?: string;
   question_text?: string; // Backend usa snake_case
   questionType?: QuestionType;
@@ -55,6 +70,11 @@ export interface Question {
   correction_criteria?: string; // Backend usa snake_case
   createdAt?: string;
   created_at?: string; // Backend usa snake_case
+  // Opciones para preguntas MATH
+  requireUnits?: boolean;
+  require_units?: boolean;
+  unitPenalty?: number;
+  unit_penalty?: number;
 }
 
 export interface StudentAttempt {
@@ -163,6 +183,13 @@ export interface CreateTestRequest {
 export interface UpdateTestRequest {
   title?: string;
   courseId?: string;
+  // Opciones de corrección
+  requireFalseJustification?: boolean;
+  falseJustificationPenalty?: number;
+  evaluateSpelling?: boolean;
+  evaluateWriting?: boolean;
+  spellingPoints?: number | null;
+  writingPoints?: number | null;
 }
 
 export interface UploadPDFResponse {
@@ -183,12 +210,23 @@ export interface ActivateTestResponse {
 }
 
 export interface UpdateQuestionRequest {
+  questionLabel?: string;
+  question_label?: string;
   questionText?: string;
+  question_text?: string;
   questionType?: QuestionType;
+  type?: QuestionType;
   points?: number;
   correctAnswer?: string;
   options?: string[];
   rubric?: string;
+  correctionCriteria?: string;
+  correction_criteria?: string;
+  correct_answer?: string;
+  requireUnits?: boolean;
+  require_units?: boolean;
+  unitPenalty?: number;
+  unit_penalty?: number;
 }
 
 // Student
@@ -221,6 +259,7 @@ export interface SaveAnswersRequest {
   answers: Array<{
     questionId: string;
     answerValue: string;
+    justification?: string; // Para V/F con justificación
   }>;
 }
 
@@ -269,6 +308,7 @@ export interface TestAttemptsResponse {
     activatedAt: string | null;
     endsAt: string | null;
     timeRemainingSeconds: number | null;
+    correctionCompletedAt: string | null;
   };
   students: MonitorStudent[];
   summary: {

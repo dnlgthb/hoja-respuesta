@@ -1,4 +1,4 @@
-# ARQUITECTURA - Mi Hoja
+# ARQUITECTURA - Aproba
 
 > Contexto rápido para programar. Ver ROADMAP.md para estado del proyecto y DECISIONES_TECNICAS.md para justificaciones.
 

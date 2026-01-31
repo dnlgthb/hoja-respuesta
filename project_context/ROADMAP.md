@@ -1,4 +1,4 @@
-# MI HOJA - ROADMAP
+# APROBA - ROADMAP
 
 ## Descripción del Proyecto
 
@@ -138,6 +138,16 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 - [x] Input de duración permite borrar y editar libremente
 - [x] Scroll funcional en página de prueba del estudiante
 - [x] Texto legible en todos los inputs (text-gray-900)
+- [x] Editor MathLive para respuestas matemáticas (estudiante y profesor)
+- [x] Editor completo de preguntas (agregar, eliminar, reordenar, editar todos los campos)
+- [x] Nomenclatura flexible de preguntas (soporta "I.a", "II.b", "1.1", etc.)
+- [x] Opciones de corrección avanzadas:
+  - Exigir justificación en respuestas Falso (con pauta)
+  - Evaluar ortografía (puntaje configurable)
+  - Evaluar redacción (puntaje configurable)
+  - Exigir unidades en matemáticas (con penalización configurable)
+- [x] Cálculo de nota chilena (escala 1.0-7.0, nota 4.0 al 60%)
+- [x] Umbral de aprobación configurable por prueba
 
 ---
 

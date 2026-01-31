@@ -70,18 +70,28 @@ model CourseStudent {
 // MODELO: PRUEBAS
 // ============================================
 model Test {
-  id               String     @id @default(cuid())
-  teacher_id       String
-  course_id        String?    // Curso asociado (opcional)
-  title            String
-  status           TestStatus @default(DRAFT)
-  access_code      String?    @unique  // Código de 6 caracteres (generado al activar)
-  pdf_url          String?              // URL del PDF en Supabase Storage
-  duration_minutes Int?                 // Duración de la prueba en minutos (1-480)
-  created_at       DateTime   @default(now())
-  activated_at     DateTime?            // Cuando se activó la prueba
-  ends_at          DateTime?            // Cuando termina la prueba (activated_at + duration_minutes)
-  closed_at        DateTime?            // Cuando se cerró la prueba
+  id                String     @id @default(cuid())
+  teacher_id        String
+  course_id         String?    // Curso asociado (opcional)
+  title             String
+  status            TestStatus @default(DRAFT)
+  access_code       String?    @unique  // Código de 6 caracteres (generado al activar)
+  pdf_url           String?              // URL del PDF en Supabase Storage
+  duration_minutes  Int?                 // Duración de la prueba en minutos (1-480)
+  passing_threshold Int        @default(60) // Exigencia: % mínimo para nota 4.0 (default 60%)
+  created_at        DateTime   @default(now())
+  activated_at      DateTime?            // Cuando se activó la prueba
+  ends_at           DateTime?            // Cuando termina la prueba (activated_at + duration_minutes)
+  closed_at              DateTime?            // Cuando se cerró la prueba
+  correction_completed_at DateTime?           // Cuando terminó la corrección automática
+
+  // Opciones de corrección
+  require_false_justification Boolean @default(false) // Si V/F requiere justificar falsas
+  false_justification_penalty Float   @default(0.5)   // Porcentaje de descuento (0.5 = 50%)
+  evaluate_spelling           Boolean @default(false) // Evaluar ortografía
+  evaluate_writing            Boolean @default(false) // Evaluar redacción
+  spelling_points             Float?                  // Puntaje asignado a ortografía
+  writing_points              Float?                  // Puntaje asignado a redacción
 
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
@@ -108,13 +118,16 @@ enum TestStatus {
 model Question {
   id                  String       @id @default(cuid())
   test_id             String
-  question_number     Int                      // Número de pregunta (1, 2, 3...)
+  question_number     Int                      // Número secuencial para ordenamiento (1, 2, 3...)
+  question_label      String?                  // Nomenclatura visible (ej: "I.a", "II.b", "1.1")
   type                QuestionType
   question_text       String       @db.Text
   points              Decimal      @db.Decimal(5, 2)  // Ej: 5.00 puntos
   options             Json?                    // Para múltiple opción: ["A", "B", "C", "D"]
   correct_answer      String?                  // "V", "F", "A", "B", etc.
   correction_criteria String?      @db.Text   // Pauta para desarrollo/matemáticas
+  require_units       Boolean      @default(false) // Exigir unidades en respuesta (solo MATH)
+  unit_penalty        Float        @default(0.5)   // Porcentaje de descuento si falta/está mal
   created_at          DateTime     @default(now())
   
   // Relaciones
@@ -152,6 +165,10 @@ model StudentAttempt {
   reviewed_at       DateTime?                  // Cuando el profesor marcó como revisado
   results_sent_at   DateTime?                  // Cuando se envió el email de resultados
   last_activity_at  DateTime       @default(now())  // Última actividad (para detectar sesiones activas)
+  paste_attempts    Int            @default(0)      // Contador de intentos de paste externo
+  spelling_score    Float?                          // Puntaje de ortografía (evaluación global)
+  writing_score     Float?                          // Puntaje de redacción (evaluación global)
+  spelling_writing_feedback String? @db.Text        // Feedback de ortografía y redacción
   created_at        DateTime       @default(now())
 
   // Relaciones
@@ -181,6 +198,7 @@ model Answer {
   student_attempt_id String
   question_id        String
   answer_value       String?  @db.Text  // Respuesta del estudiante ("V", "A", "texto largo", etc.)
+  justification      String?  @db.Text  // Justificación para preguntas V/F (cuando se requiere)
   points_earned      Decimal? @db.Decimal(5, 2)  // Puntos obtenidos (null hasta corrección)
   ai_feedback        String?  @db.Text  // Retroalimentación de la IA (para desarrollo/math)
   created_at         DateTime @default(now())

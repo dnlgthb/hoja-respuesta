@@ -7,7 +7,8 @@ import Navbar from '@/components/Navbar';
 import QuestionEditor from '@/components/QuestionEditor';
 import { testsAPI, questionsAPI, coursesAPI } from '@/lib/api';
 import { Test, Question, Course } from '@/types';
-import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X } from 'lucide-react';
+import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X, Settings, Plus } from 'lucide-react';
+import { QuestionType } from '@/types';
 import { ROUTES } from '@/config/constants';
 
 export default function TestDetailPage() {
@@ -35,6 +36,15 @@ export default function TestDetailPage() {
   const [showDurationModal, setShowDurationModal] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState<string>('60');
 
+  // Correction options
+  const [requireFalseJustification, setRequireFalseJustification] = useState(false);
+  const [falseJustificationPenalty, setFalseJustificationPenalty] = useState<string>('50');
+  const [evaluateSpelling, setEvaluateSpelling] = useState(false);
+  const [evaluateWriting, setEvaluateWriting] = useState(false);
+  const [spellingPoints, setSpellingPoints] = useState<string>('');
+  const [writingPoints, setWritingPoints] = useState<string>('');
+  const [hasUnsavedCorrectionOptions, setHasUnsavedCorrectionOptions] = useState(false);
+
   // Cargar prueba y preguntas
   useEffect(() => {
     loadTest();
@@ -56,6 +66,15 @@ export default function TestDetailPage() {
       });
 
       setQuestions(sortedQuestions);
+
+      // Cargar opciones de corrección
+      setRequireFalseJustification(data.requireFalseJustification ?? data.require_false_justification ?? false);
+      setFalseJustificationPenalty(String((data.falseJustificationPenalty ?? data.false_justification_penalty ?? 0.5) * 100));
+      setEvaluateSpelling(data.evaluateSpelling ?? data.evaluate_spelling ?? false);
+      setEvaluateWriting(data.evaluateWriting ?? data.evaluate_writing ?? false);
+      setSpellingPoints(data.spellingPoints ?? data.spelling_points ? String(data.spellingPoints ?? data.spelling_points) : '');
+      setWritingPoints(data.writingPoints ?? data.writing_points ? String(data.writingPoints ?? data.writing_points) : '');
+      setHasUnsavedCorrectionOptions(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar la prueba');
     } finally {
@@ -84,6 +103,85 @@ export default function TestDetailPage() {
       newMap.set(questionId, { ...existing, ...updates });
       return newMap;
     });
+  };
+
+  // Eliminar una pregunta
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta pregunta?')) {
+      return;
+    }
+
+    try {
+      setError(null);
+      await questionsAPI.delete(testId, questionId);
+      setQuestions(prev => prev.filter(q => q.id !== questionId));
+      setEditedQuestions(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(questionId);
+        return newMap;
+      });
+      setSuccessMessage('Pregunta eliminada correctamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar la pregunta');
+    }
+  };
+
+  // Agregar nueva pregunta
+  const handleAddQuestion = async () => {
+    try {
+      setError(null);
+      const newQuestion = await questionsAPI.create(testId, {
+        question_text: 'Nueva pregunta',
+        type: QuestionType.DEVELOPMENT,
+        points: 1,
+      });
+      setQuestions(prev => [...prev, newQuestion]);
+      setSuccessMessage('Pregunta agregada correctamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al agregar la pregunta');
+    }
+  };
+
+  // Mover pregunta arriba
+  const handleMoveUp = async (index: number) => {
+    if (index <= 0) return;
+
+    const newQuestions = [...questions];
+    [newQuestions[index - 1], newQuestions[index]] = [newQuestions[index], newQuestions[index - 1]];
+
+    // Actualizar UI inmediatamente
+    setQuestions(newQuestions);
+
+    // Guardar nuevo orden en backend
+    try {
+      await questionsAPI.reorder(testId, newQuestions.map(q => q.id));
+    } catch (err) {
+      // Revertir si falla
+      setQuestions(questions);
+      setError(err instanceof Error ? err.message : 'Error al reordenar');
+    }
+  };
+
+  // Mover pregunta abajo
+  const handleMoveDown = async (index: number) => {
+    if (index >= questions.length - 1) return;
+
+    const newQuestions = [...questions];
+    [newQuestions[index], newQuestions[index + 1]] = [newQuestions[index + 1], newQuestions[index]];
+
+    // Actualizar UI inmediatamente
+    setQuestions(newQuestions);
+
+    // Guardar nuevo orden en backend
+    try {
+      await questionsAPI.reorder(testId, newQuestions.map(q => q.id));
+    } catch (err) {
+      // Revertir si falla
+      setQuestions(questions);
+      setError(err instanceof Error ? err.message : 'Error al reordenar');
+    }
   };
 
   // Guardar todos los cambios
@@ -150,6 +248,36 @@ export default function TestDetailPage() {
     }
   };
 
+  // Guardar opciones de corrección
+  const handleSaveCorrectionOptions = async () => {
+    try {
+      setIsSaving(true);
+      setError(null);
+
+      await testsAPI.update(testId, {
+        requireFalseJustification,
+        falseJustificationPenalty: parseFloat(falseJustificationPenalty) / 100,
+        evaluateSpelling,
+        evaluateWriting,
+        spellingPoints: evaluateSpelling && spellingPoints ? parseFloat(spellingPoints) : null,
+        writingPoints: evaluateWriting && writingPoints ? parseFloat(writingPoints) : null,
+      });
+
+      setHasUnsavedCorrectionOptions(false);
+      setSuccessMessage('Opciones de corrección guardadas correctamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar opciones de corrección');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handler para cambios en opciones de corrección
+  const handleCorrectionOptionChange = () => {
+    setHasUnsavedCorrectionOptions(true);
+  };
+
   // Abrir modal de activación
   const handleOpenActivateModal = () => {
     if (!test) return;
@@ -178,8 +306,9 @@ export default function TestDetailPage() {
       const correctAnswer = q.correctAnswer || q.correct_answer;
       const correctionCriteria = q.correctionCriteria || q.correction_criteria;
 
-      if (questionType === 'DEVELOPMENT') {
-        return !correctionCriteria;
+      // DEVELOPMENT y MATH pueden usar correctionCriteria en vez de correctAnswer
+      if (questionType === 'DEVELOPMENT' || questionType === 'MATH') {
+        return !correctionCriteria && !correctAnswer;
       }
       return !correctAnswer;
     });
@@ -234,7 +363,7 @@ export default function TestDetailPage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -250,7 +379,7 @@ export default function TestDetailPage() {
   if (!test) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="max-w-3xl mx-auto px-6 py-8">
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
@@ -267,7 +396,7 @@ export default function TestDetailPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
 
         <div className="max-w-4xl mx-auto px-6 py-8">
@@ -388,6 +517,148 @@ export default function TestDetailPage() {
             ) : null}
           </div>
 
+          {/* Correction Options Section */}
+          {!isActive && (
+            <div className="mb-6 bg-white rounded-lg shadow-md border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Settings className="w-5 h-5 text-gray-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Opciones de Corrección</h2>
+              </div>
+
+              <div className="space-y-4">
+                {/* Justificación V/F */}
+                <div className="border-b border-gray-100 pb-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={requireFalseJustification}
+                      onChange={(e) => {
+                        setRequireFalseJustification(e.target.checked);
+                        handleCorrectionOptionChange();
+                      }}
+                      className="mt-1 w-4 h-4 text-primary rounded focus:ring-primary"
+                    />
+                    <div>
+                      <span className="font-medium text-gray-900">Requerir justificación en respuestas Falsas (V/F)</span>
+                      <p className="text-sm text-gray-500">Los estudiantes deberán explicar por qué una afirmación es falsa</p>
+                    </div>
+                  </label>
+                  {requireFalseJustification && (
+                    <div className="ml-7 mt-3 flex items-center gap-2">
+                      <label className="text-sm text-gray-700">Descuento si no justifica o justifica mal:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={falseJustificationPenalty}
+                        onChange={(e) => {
+                          setFalseJustificationPenalty(e.target.value);
+                          handleCorrectionOptionChange();
+                        }}
+                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">%</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ortografía y Redacción */}
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">
+                    Evalúa la ortografía y redacción en todas las preguntas de desarrollo de forma global.
+                  </p>
+
+                  {/* Ortografía */}
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evaluateSpelling}
+                        onChange={(e) => {
+                          setEvaluateSpelling(e.target.checked);
+                          handleCorrectionOptionChange();
+                        }}
+                        className="w-4 h-4 text-primary rounded focus:ring-primary"
+                      />
+                      <span className="text-gray-900">Evaluar ortografía</span>
+                    </label>
+                    {evaluateSpelling && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-700">Puntaje:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={spellingPoints}
+                          onChange={(e) => {
+                            setSpellingPoints(e.target.value);
+                            handleCorrectionOptionChange();
+                          }}
+                          placeholder="0"
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
+                        />
+                        <span className="text-sm text-gray-700">pts</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Redacción */}
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={evaluateWriting}
+                        onChange={(e) => {
+                          setEvaluateWriting(e.target.checked);
+                          handleCorrectionOptionChange();
+                        }}
+                        className="w-4 h-4 text-primary rounded focus:ring-primary"
+                      />
+                      <span className="text-gray-900">Evaluar redacción</span>
+                    </label>
+                    {evaluateWriting && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-700">Puntaje:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={writingPoints}
+                          onChange={(e) => {
+                            setWritingPoints(e.target.value);
+                            handleCorrectionOptionChange();
+                          }}
+                          placeholder="0"
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
+                        />
+                        <span className="text-sm text-gray-700">pts</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {!questions.some(q => (q.questionType || q.type) === 'DEVELOPMENT') && (evaluateSpelling || evaluateWriting) && (
+                    <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                      ⚠️ No hay preguntas de desarrollo en esta prueba. La evaluación de ortografía/redacción solo aplica a preguntas de desarrollo.
+                    </p>
+                  )}
+                </div>
+
+                {/* Botón guardar opciones */}
+                {hasUnsavedCorrectionOptions && (
+                  <div className="pt-4 border-t border-gray-100">
+                    <button
+                      onClick={handleSaveCorrectionOptions}
+                      disabled={isSaving}
+                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark transition-colors disabled:opacity-50"
+                    >
+                      {isSaving ? 'Guardando...' : 'Guardar opciones de corrección'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Success Message */}
           {successMessage && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-md">
@@ -403,15 +674,34 @@ export default function TestDetailPage() {
           )}
 
           {/* Questions List */}
-          <div className="space-y-6 mb-8">
+          <div className="space-y-4 mb-8">
             {questions.map((question, index) => (
               <QuestionEditor
                 key={question.id}
                 question={question}
                 index={index}
+                totalQuestions={questions.length}
                 onChange={(updates) => handleQuestionChange(question.id, updates)}
+                onDelete={() => handleDeleteQuestion(question.id)}
+                onMoveUp={() => handleMoveUp(index)}
+                onMoveDown={() => handleMoveDown(index)}
+                requireFalseJustification={requireFalseJustification}
+                isFirst={index === 0}
+                isLast={index === questions.length - 1}
               />
             ))}
+
+            {/* Botón agregar pregunta */}
+            {!isActive && (
+              <button
+                type="button"
+                onClick={handleAddQuestion}
+                className="w-full py-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Agregar pregunta
+              </button>
+            )}
           </div>
 
           {/* Action Buttons */}

@@ -1,4 +1,4 @@
-# MI HOJA - DECISIONES TÉCNICAS
+# APROBA - DECISIONES TÉCNICAS
 
 Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
@@ -178,3 +178,22 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - lucide-react → Íconos
 - axios → Cliente HTTP
 - xlsx → Parseo de archivos Excel/CSV (backend)
+- mathlive → Editor de expresiones matemáticas (LaTeX)
+
+---
+
+## Editor de Matemáticas (MathLive)
+
+**Decisión:** Usar MathLive para entrada de expresiones matemáticas
+
+**Implementación:**
+- Carga dinámica (solo cliente, no SSR)
+- Usa fuentes del sistema (`fontsDirectory = null`)
+- Barra de herramientas con símbolos comunes (fracciones, raíces, exponentes, etc.)
+- Placeholder como texto visible sobre el campo (MathLive no maneja bien placeholders internos)
+
+**Razones:**
+- Gratuito y open source
+- Soporte nativo de LaTeX
+- Teclado virtual opcional
+- Funciona bien en móviles

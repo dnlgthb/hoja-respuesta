@@ -42,6 +42,8 @@ export default function MonitorPage() {
   // Close test state
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isCorrecting, setIsCorrecting] = useState(false);
+  const correctionPollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cargar datos
   const loadData = useCallback(async (showRefreshIndicator = false) => {
@@ -110,7 +112,10 @@ export default function MonitorPage() {
       setIsClosing(true);
       await testsAPI.close(testId);
       setShowCloseConfirm(false);
+      setIsCorrecting(true); // Marcar que está corrigiendo
       await loadData();
+      // Iniciar polling para verificar si la corrección terminó
+      startCorrectionPolling();
     } catch (err) {
       if (err instanceof Error) {
         alert(err.message);
@@ -119,6 +124,52 @@ export default function MonitorPage() {
       setIsClosing(false);
     }
   };
+
+  // Polling para verificar estado de corrección
+  const startCorrectionPolling = () => {
+    // Limpiar polling anterior si existe
+    if (correctionPollRef.current) {
+      clearInterval(correctionPollRef.current);
+    }
+
+    // Polling cada 5 segundos
+    correctionPollRef.current = setInterval(async () => {
+      try {
+        const response = await testsAPI.getAttempts(testId);
+        setData(response);
+
+        // Si la corrección terminó, detener polling
+        if (response.test.correctionCompletedAt) {
+          setIsCorrecting(false);
+          if (correctionPollRef.current) {
+            clearInterval(correctionPollRef.current);
+            correctionPollRef.current = null;
+          }
+        }
+      } catch (err) {
+        console.error('Error polling correction status:', err);
+      }
+    }, 5000);
+  };
+
+  // Limpiar polling al desmontar
+  useEffect(() => {
+    return () => {
+      if (correctionPollRef.current) {
+        clearInterval(correctionPollRef.current);
+      }
+    };
+  }, []);
+
+  // Verificar si la prueba está cerrada pero la corrección no ha terminado
+  useEffect(() => {
+    if (data?.test.status === 'CLOSED' && !data?.test.correctionCompletedAt) {
+      setIsCorrecting(true);
+      startCorrectionPolling();
+    } else if (data?.test.correctionCompletedAt) {
+      setIsCorrecting(false);
+    }
+  }, [data?.test.status, data?.test.correctionCompletedAt]);
 
   // Formatear tiempo restante
   const formatTimeRemaining = (seconds: number): string => {
@@ -172,7 +223,7 @@ export default function MonitorPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FBF9F3] flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600">Cargando monitoreo...</p>
@@ -184,7 +235,7 @@ export default function MonitorPage() {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#FBF9F3] flex items-center justify-center px-4">
         <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
@@ -200,7 +251,7 @@ export default function MonitorPage() {
   if (!data) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FBF9F3]">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4">
@@ -275,10 +326,24 @@ export default function MonitorPage() {
               {data.test.status === 'CLOSED' && (
                 <button
                   onClick={() => router.push(ROUTES.TEST_RESULTS(testId))}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark transition-colors"
+                  disabled={isCorrecting}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+                    isCorrecting
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-primary text-white hover:bg-primary-dark'
+                  }`}
                 >
-                  <CheckCircle className="w-4 h-4" />
-                  Ver Resultados
+                  {isCorrecting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Corrigiendo...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Ver Resultados
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -475,8 +540,8 @@ export default function MonitorPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowCloseConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
                 disabled={isClosing}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancelar
               </button>

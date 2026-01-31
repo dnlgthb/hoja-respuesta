@@ -7,6 +7,7 @@ import {
   FileText, User, CheckCircle, Circle, ChevronDown, ChevronUp,
   Save, Loader2, AlertCircle, Send, X, Timer, Clock, Mail
 } from 'lucide-react';
+import MathField from '@/components/MathField';
 
 // ============================================
 // CONSTANTES
@@ -22,6 +23,7 @@ const AUTOSAVE_INTERVAL = 10000; // 10 segundos
 interface Question {
   id: string;
   questionNumber: number;
+  questionLabel?: string;
   type: 'TRUE_FALSE' | 'MULTIPLE_CHOICE' | 'DEVELOPMENT' | 'MATH';
   questionText: string;
   points: number;
@@ -35,7 +37,7 @@ interface AttemptData {
   status: 'IN_PROGRESS' | 'SUBMITTED';
   submittedAt: string | null;
   resultsToken?: string;
-  answers: Array<{ questionId: string; answerValue: string }>;
+  answers: Array<{ questionId: string; answerValue: string; justification?: string | null }>;
   test: {
     id: string;
     title: string;
@@ -44,6 +46,7 @@ interface AttemptData {
     durationMinutes: number | null;
     endsAt: string | null;
     timeRemainingSeconds: number | null;
+    requireFalseJustification?: boolean;
     questions: Question[];
   };
 }
@@ -63,6 +66,7 @@ export default function PruebaAttemptPage() {
   const [error, setError] = useState<string | null>(null);
   const [attemptData, setAttemptData] = useState<AttemptData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [justifications, setJustifications] = useState<Record<string, string>>({});
   const [showPdfMobile, setShowPdfMobile] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -96,12 +100,17 @@ export default function PruebaAttemptPage() {
         const data = await studentAPI.getAttempt(attemptId, deviceToken);
         setAttemptData(data);
 
-        // Inicializar respuestas existentes
+        // Inicializar respuestas y justificaciones existentes
         const existingAnswers: Record<string, string> = {};
-        data.answers?.forEach((ans: { questionId: string; answerValue: string }) => {
+        const existingJustifications: Record<string, string> = {};
+        data.answers?.forEach((ans: { questionId: string; answerValue: string; justification?: string | null }) => {
           existingAnswers[ans.questionId] = ans.answerValue || '';
+          if (ans.justification) {
+            existingJustifications[ans.questionId] = ans.justification;
+          }
         });
         setAnswers(existingAnswers);
+        setJustifications(existingJustifications);
         lastSavedAnswers.current = { ...existingAnswers };
       } catch (err) {
         console.error('Error loading attempt:', err);
@@ -180,10 +189,14 @@ export default function PruebaAttemptPage() {
       return true;
     }
 
-    // Convertir a formato de API
+    // Convertir a formato de API (incluir justificaciones)
     const answersArray = Object.entries(answers)
       .filter(([_, value]) => value && value.trim() !== '')
-      .map(([questionId, answerValue]) => ({ questionId, answerValue }));
+      .map(([questionId, answerValue]) => ({
+        questionId,
+        answerValue,
+        justification: justifications[questionId] || undefined,
+      }));
 
     if (answersArray.length === 0 && !force) {
       return true;
@@ -203,7 +216,7 @@ export default function PruebaAttemptPage() {
       setSaveStatus('error');
       return false;
     }
-  }, [answers, attemptData, attemptId]);
+  }, [answers, justifications, attemptData, attemptId]);
 
   // ============================================
   // AUTOSAVE INTERVAL
@@ -253,6 +266,21 @@ export default function PruebaAttemptPage() {
       ...prev,
       [questionId]: value,
     }));
+  };
+
+  const handleJustificationChange = (questionId: string, value: string) => {
+    if (attemptData?.status === 'SUBMITTED') return;
+
+    setJustifications((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
+  };
+
+  // Handler para paste externo (anti-copy/paste)
+  const handlePasteAttempt = async () => {
+    if (!deviceTokenRef.current) return;
+    await studentAPI.recordPasteAttempt(attemptId, deviceTokenRef.current);
   };
 
   const handleSubmit = async () => {
@@ -494,6 +522,10 @@ export default function PruebaAttemptPage() {
                 question={question}
                 value={answers[question.id] || ''}
                 onChange={(value) => handleAnswerChange(question.id, value)}
+                justification={justifications[question.id] || ''}
+                onJustificationChange={(value) => handleJustificationChange(question.id, value)}
+                requireFalseJustification={attemptData.test.requireFalseJustification}
+                onPasteAttempt={handlePasteAttempt}
                 disabled={isSubmitted}
               />
             ))}
@@ -668,10 +700,14 @@ interface QuestionCardProps {
   question: Question;
   value: string;
   onChange: (value: string) => void;
+  justification?: string;
+  onJustificationChange?: (value: string) => void;
+  requireFalseJustification?: boolean;
+  onPasteAttempt?: () => void;
   disabled?: boolean;
 }
 
-function QuestionCard({ question, value, onChange, disabled }: QuestionCardProps) {
+function QuestionCard({ question, value, onChange, justification, onJustificationChange, requireFalseJustification, onPasteAttempt, disabled }: QuestionCardProps) {
   const isAnswered = value && value.trim() !== '';
 
   return (
@@ -688,7 +724,7 @@ function QuestionCard({ question, value, onChange, disabled }: QuestionCardProps
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-semibold text-gray-900">
-              Pregunta {question.questionNumber}
+              Pregunta {question.questionLabel || question.questionNumber}
             </span>
             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
               {question.points} {question.points === 1 ? 'punto' : 'puntos'}
@@ -701,7 +737,15 @@ function QuestionCard({ question, value, onChange, disabled }: QuestionCardProps
       {/* Input según tipo */}
       <div className="p-4">
         {question.type === 'TRUE_FALSE' && (
-          <TrueFalseInput value={value} onChange={onChange} disabled={disabled} />
+          <TrueFalseInput
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            justification={justification}
+            onJustificationChange={onJustificationChange}
+            requireJustification={requireFalseJustification}
+            onPasteAttempt={onPasteAttempt}
+          />
         )}
         {question.type === 'MULTIPLE_CHOICE' && (
           <MultipleChoiceInput
@@ -712,10 +756,10 @@ function QuestionCard({ question, value, onChange, disabled }: QuestionCardProps
           />
         )}
         {question.type === 'DEVELOPMENT' && (
-          <DevelopmentInput value={value} onChange={onChange} disabled={disabled} />
+          <DevelopmentInput value={value} onChange={onChange} disabled={disabled} onPasteAttempt={onPasteAttempt} />
         )}
         {question.type === 'MATH' && (
-          <MathInput value={value} onChange={onChange} disabled={disabled} />
+          <MathInput value={value} onChange={onChange} disabled={disabled} onPasteAttempt={onPasteAttempt} />
         )}
       </div>
     </div>
@@ -730,36 +774,85 @@ interface InputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  onPasteAttempt?: () => void;
+}
+
+interface TrueFalseInputProps extends InputProps {
+  justification?: string;
+  onJustificationChange?: (value: string) => void;
+  requireJustification?: boolean;
 }
 
 // Verdadero / Falso
-function TrueFalseInput({ value, onChange, disabled }: InputProps) {
+function TrueFalseInput({ value, onChange, disabled, justification, onJustificationChange, requireJustification, onPasteAttempt }: TrueFalseInputProps) {
+  const showJustificationField = requireJustification && value === 'F';
+
+  // Handler para paste en justificación
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedText = e.clipboardData.getData('text');
+    const currentText = e.currentTarget.value || '';
+
+    // Permitir si el texto pegado ya está en el campo (cortar y pegar interno)
+    if (currentText.includes(pastedText)) {
+      return;
+    }
+
+    // Bloquear paste externo y registrar
+    e.preventDefault();
+    onPasteAttempt?.();
+  };
+
   return (
-    <div className="flex gap-3">
-      <button
-        type="button"
-        onClick={() => !disabled && onChange('V')}
-        disabled={disabled}
-        className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
-          value === 'V'
-            ? 'border-green-500 bg-green-50 text-green-700'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-        } ${disabled ? 'cursor-not-allowed' : ''}`}
-      >
-        Verdadero
-      </button>
-      <button
-        type="button"
-        onClick={() => !disabled && onChange('F')}
-        disabled={disabled}
-        className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
-          value === 'F'
-            ? 'border-red-500 bg-red-50 text-red-700'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-        } ${disabled ? 'cursor-not-allowed' : ''}`}
-      >
-        Falso
-      </button>
+    <div className="space-y-3">
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => !disabled && onChange('V')}
+          disabled={disabled}
+          className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
+            value === 'V'
+              ? 'border-green-500 bg-green-50 text-green-700'
+              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+          } ${disabled ? 'cursor-not-allowed' : ''}`}
+        >
+          Verdadero
+        </button>
+        <button
+          type="button"
+          onClick={() => !disabled && onChange('F')}
+          disabled={disabled}
+          className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
+            value === 'F'
+              ? 'border-red-500 bg-red-50 text-red-700'
+              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+          } ${disabled ? 'cursor-not-allowed' : ''}`}
+        >
+          Falso
+        </button>
+      </div>
+
+      {/* Campo de justificación para respuestas Falsas */}
+      {showJustificationField && (
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Justifica tu respuesta:
+          </label>
+          <textarea
+            value={justification || ''}
+            onChange={(e) => onJustificationChange?.(e.target.value)}
+            onPaste={handlePaste}
+            placeholder="Explica por qué la afirmación es falsa..."
+            rows={3}
+            disabled={disabled}
+            className={`w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y text-gray-900 ${
+              disabled ? 'bg-gray-50 cursor-not-allowed' : ''
+            }`}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Requerido para respuestas Falsas
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -808,11 +901,27 @@ function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleCho
 }
 
 // Desarrollo
-function DevelopmentInput({ value, onChange, disabled }: InputProps) {
+function DevelopmentInput({ value, onChange, disabled, onPasteAttempt }: InputProps) {
+  // Handler para paste externo
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedText = e.clipboardData.getData('text');
+    const currentText = e.currentTarget.value || '';
+
+    // Permitir si el texto pegado ya está en el campo (cortar y pegar interno)
+    if (currentText.includes(pastedText)) {
+      return;
+    }
+
+    // Bloquear paste externo y registrar
+    e.preventDefault();
+    onPasteAttempt?.();
+  };
+
   return (
     <textarea
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onPaste={handlePaste}
       placeholder="Escribe tu respuesta..."
       rows={4}
       disabled={disabled}
@@ -823,18 +932,14 @@ function DevelopmentInput({ value, onChange, disabled }: InputProps) {
   );
 }
 
-// Matemática
+// Matemática con MathLive
 function MathInput({ value, onChange, disabled }: InputProps) {
   return (
-    <textarea
+    <MathField
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Escribe el procedimiento y resultado..."
-      rows={3}
+      onChange={onChange}
       disabled={disabled}
-      className={`w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y font-mono text-gray-900 ${
-        disabled ? 'bg-gray-50 cursor-not-allowed' : ''
-      }`}
+      placeholder="Escribe tu resultado aquí"
     />
   );
 }

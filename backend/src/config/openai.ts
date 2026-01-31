@@ -13,36 +13,61 @@ const openai = new OpenAI({
  * @returns Array de preguntas estructuradas
  */
 export async function analyzeDocument(pdfText: string) {
-  const prompt = `Eres un asistente que analiza pruebas educativas.
-Analiza el siguiente documento y extrae la estructura de preguntas.
+  const prompt = `Extrae las preguntas de esta prueba educativa.
 
-Para cada pregunta, identifica:
-- Número de pregunta
-- Tipo: "TRUE_FALSE", "MULTIPLE_CHOICE", "DEVELOPMENT", "MATH"
-- Texto de la pregunta
-- Puntaje (si está indicado, si no usa 1)
-- Opciones (si es múltiple opción, array de strings)
+REGLA MÁS IMPORTANTE - TEXTO DE LA PREGUNTA:
+El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.
 
-Responde ÚNICAMENTE con JSON en este formato:
+EJEMPLO CORRECTO para preguntas matemáticas:
+Documento dice: "2. Calcula y simplifica: (3/4) + (2/8) = ___"
+→ text: "Calcula y simplifica: (3/4) + (2/8)"  ← INCLUYE "Calcula y simplifica"
+
+EJEMPLO INCORRECTO:
+→ text: "(3/4) + (2/8)"  ← MAL, falta la instrucción
+
+TIPOS DE PREGUNTA:
+- TRUE_FALSE: Afirmaciones V/F
+- MULTIPLE_CHOICE: Pregunta con opciones (incluir array "options")
+- DEVELOPMENT: Preguntas abiertas/redacción
+- MATH: Cálculos matemáticos
+
+NOMENCLATURA:
+- Usa la numeración exacta del documento: "1", "2", "I.a", "II.b", etc.
+
+Responde SOLO JSON:
 {
   "questions": [
     {
-      "number": 1,
-      "type": "MULTIPLE_CHOICE",
+      "number": "1",
+      "type": "TRUE_FALSE",
+      "points": 1,
+      "text": "El sol es una estrella",
+      "options": null
+    },
+    {
+      "number": "2",
+      "type": "MATH",
       "points": 2,
-      "text": "texto de la pregunta",
-      "options": ["A", "B", "C", "D"]
+      "text": "Calcula y simplifica: (3/4) + (2/8)",
+      "options": null
+    },
+    {
+      "number": "3",
+      "type": "MATH",
+      "points": 2,
+      "text": "Calcula: √49 + √9",
+      "options": null
     }
   ]
 }
 
 IMPORTANTE:
-- Para preguntas Verdadero/Falso, usa type: "TRUE_FALSE"
-- Para preguntas de múltiple opción, usa type: "MULTIPLE_CHOICE" e incluye options
-- Para preguntas de desarrollo, usa type: "DEVELOPMENT"
-- Para ejercicios matemáticos, usa type: "MATH"
+- El campo "text" DEBE incluir la INSTRUCCIÓN completa (ej: "Calcula y simplifica:", "Calcula:", "Resuelve:")
+- NO omitas las instrucciones, solo la expresión matemática no es suficiente
+- El campo "number" es STRING (permite "I.a", "2.b", etc.)
+- Si hay puntaje indicado, úsalo; si no, usa 1 punto
 
-Documento:
+Documento a analizar:
 ${pdfText}`;
 
   const completion = await openai.chat.completions.create({
@@ -132,36 +157,312 @@ export async function correctWithAI(params: {
 }): Promise<{ pointsEarned: number; feedback: string }> {
   const { questionType, questionText, correctionCriteria, maxPoints, studentAnswer } = params;
 
+  // Para MATH: solo comparar resultado, NO pedir procedimiento
   const typeDescription = questionType === 'MATH'
-    ? 'Esta es una pregunta de MATEMÁTICAS. Evalúa tanto el procedimiento como el resultado final. Un procedimiento correcto con error de cálculo menor puede recibir puntaje parcial.'
+    ? 'Esta es una pregunta de MATEMÁTICAS. Solo compara el RESULTADO FINAL con la pauta. NO evalúes procedimiento.'
     : 'Esta es una pregunta de DESARROLLO. Evalúa la comprensión conceptual, claridad de expresión y uso correcto de términos.';
 
-  const prompt = `Eres un profesor evaluando la respuesta de un estudiante. Tu rol es ser justo, pedagógico y constructivo.
+  const mathInstructions = questionType === 'MATH'
+    ? `
+REGLAS PARA MATEMÁTICAS:
+- SOLO compara el resultado numérico/expresión del estudiante con la pauta
+- Si el resultado coincide (mismo valor): puntaje completo
+- Si no coincide: 0 puntos
+- NUNCA pidas "desarrollo", "procedimiento" o "demostración"
+- El feedback solo dice si es correcto o incorrecto`
+    : '';
+
+  const prompt = `Eres un profesor evaluando la respuesta de un estudiante.
 
 ${typeDescription}
 
 PREGUNTA:
 ${questionText}
 
-PAUTA DE CORRECCIÓN (criterios del profesor):
-${correctionCriteria || 'No se proporcionó pauta específica. Evalúa según la correctitud y completitud de la respuesta.'}
+PAUTA DE CORRECCIÓN (respuesta esperada):
+${correctionCriteria || 'No se proporcionó pauta específica.'}
 
 PUNTAJE MÁXIMO: ${maxPoints} puntos
 
 RESPUESTA DEL ESTUDIANTE:
 ${studentAnswer}
+${mathInstructions}
 
-INSTRUCCIONES:
-1. Evalúa la respuesta según la pauta de corrección
-2. Asigna un puntaje de 0 a ${maxPoints} (puede ser decimal, ej: 1.5)
-3. Proporciona feedback constructivo y específico
-4. Si la respuesta es parcialmente correcta, explica qué faltó o qué estuvo mal
-5. Sé alentador pero honesto
-
-Responde SOLO con JSON en este formato:
+Responde SOLO con JSON:
 {
   "pointsEarned": <número entre 0 y ${maxPoints}>,
-  "feedback": "<feedback constructivo para el estudiante>"
+  "feedback": "<feedback breve>"
+}`;
+
+  // DEBUG: Log completo ANTES de llamar a la IA
+  console.log('\n========== DEBUG correctWithAI ==========');
+  console.log('Modelo:', env.OPENAI_MODEL);
+  console.log('Tipo:', questionType);
+  console.log('Pregunta:', questionText);
+  console.log('Pauta (correctionCriteria):', correctionCriteria);
+  console.log('Respuesta estudiante:', studentAnswer);
+  console.log('Puntaje máximo:', maxPoints);
+  console.log('--- PROMPT COMPLETO ---');
+  console.log(prompt);
+  console.log('--- FIN PROMPT ---');
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un profesor experto en evaluación educativa. Corriges respuestas de manera justa. Respondes solo en formato JSON válido.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+  });
+
+  const responseText = completion.choices[0]?.message.content || '{}';
+
+  // DEBUG: Log de la respuesta de la IA
+  console.log('--- RESPUESTA IA ---');
+  console.log(responseText);
+  console.log('========== FIN DEBUG correctWithAI ==========\n');
+
+  const parsed = JSON.parse(responseText);
+
+  return {
+    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    feedback: parsed.feedback || 'No se pudo generar feedback.',
+  };
+}
+
+/**
+ * Corregir pregunta V/F con justificación de respuestas falsas
+ * @param params - Parámetros de corrección
+ * @returns Puntaje y feedback
+ */
+export async function correctTrueFalseWithJustification(params: {
+  questionText: string;
+  correctAnswer: string;
+  studentAnswer: string;
+  justification: string | null;
+  correctionCriteria: string | null;
+  maxPoints: number;
+  penaltyPercentage: number;
+}): Promise<{ pointsEarned: number; feedback: string }> {
+  const { questionText, correctAnswer, studentAnswer, justification, correctionCriteria, maxPoints, penaltyPercentage } = params;
+
+  const prompt = `¿La justificación del estudiante dice lo mismo que la pauta?
+
+PAUTA: ${correctionCriteria || 'Explicar por qué es falso'}
+ESTUDIANTE: ${justification || '(vacío)'}
+
+REGLA SIMPLE:
+- Si el estudiante dice lo mismo que la pauta (aunque con otras palabras) → ${maxPoints} puntos
+- Si el estudiante NO dice lo que pide la pauta o está vacío → ${Math.round(maxPoints * (1 - penaltyPercentage) * 100) / 100} puntos
+
+PROHIBIDO:
+- NO agregues requisitos que no están en la pauta
+- NO pidas más detalle del que tiene la pauta
+- Si la pauta dice "la respuesta es 4" y el estudiante dice "la respuesta es 4", es CORRECTO (${maxPoints} pts)
+
+JSON: { "pointsEarned": <número>, "feedback": "<máximo 10 palabras>" }`;
+
+  // DEBUG: Log completo ANTES de llamar a la IA
+  console.log('\n========== DEBUG V/F Justification ==========');
+  console.log('Modelo:', env.OPENAI_MODEL);
+  console.log('Pregunta:', questionText);
+  console.log('Respuesta correcta:', correctAnswer);
+  console.log('Respuesta estudiante:', studentAnswer);
+  console.log('Pauta (correctionCriteria):', correctionCriteria);
+  console.log('Justificación estudiante:', justification);
+  console.log('Puntaje máximo:', maxPoints);
+  console.log('Penalización:', penaltyPercentage);
+  console.log('--- PROMPT COMPLETO ---');
+  console.log(prompt);
+  console.log('--- FIN PROMPT ---');
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un profesor evaluando respuestas de Verdadero/Falso con justificación. Respondes solo en formato JSON válido.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+  });
+
+  const responseText = completion.choices[0]?.message.content || '{}';
+
+  // DEBUG: Log de la respuesta de la IA
+  console.log('--- RESPUESTA IA ---');
+  console.log(responseText);
+  console.log('========== FIN DEBUG V/F ==========\n');
+
+  const parsed = JSON.parse(responseText);
+
+  return {
+    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    feedback: parsed.feedback || 'No se pudo generar feedback.',
+  };
+}
+
+/**
+ * Corregir pregunta de matemáticas con evaluación de unidades
+ * @param params - Parámetros de corrección
+ * @returns Puntaje y feedback
+ */
+export async function correctMathWithUnits(params: {
+  questionText: string;
+  correctionCriteria: string;
+  maxPoints: number;
+  studentAnswer: string;
+  requireUnits: boolean;
+  unitPenalty: number;
+}): Promise<{ pointsEarned: number; feedback: string }> {
+  const { questionText, correctionCriteria, maxPoints, studentAnswer, requireUnits, unitPenalty } = params;
+
+  const unitsInstruction = requireUnits
+    ? `
+EVALUACIÓN DE UNIDADES: ACTIVADA
+PENALIZACIÓN SI FALTA O ESTÁ INCORRECTA: ${unitPenalty * 100}%
+
+Debes evaluar si la respuesta incluye las unidades correctas.
+- Infiere la unidad esperada del contexto de la pregunta y la pauta
+- Si las unidades faltan o son incorrectas, aplica la penalización al puntaje
+- SIEMPRE menciona en el feedback si las unidades están correctas, faltan, o son incorrectas, y cuáles deberían ser`
+    : '';
+
+  const prompt = `Compara el RESULTADO del estudiante con la RESPUESTA CORRECTA.
+
+RESPUESTA CORRECTA: ${correctionCriteria || 'No especificada'}
+RESPUESTA DEL ESTUDIANTE: ${studentAnswer}
+${unitsInstruction}
+
+EVALUACIÓN:
+- Si el resultado COINCIDE (mismo valor numérico): ${maxPoints} puntos
+- Si el resultado NO COINCIDE: 0 puntos
+
+IMPORTANTE - REGLAS ESTRICTAS:
+- Solo compara RESULTADOS, NO pidas desarrollo ni procedimiento
+- La respuesta puede estar en LaTeX (\\frac{1}{2} = 0.5 = 1/2)
+- Formatos equivalentes son correctos (1/2 = 0.5 = 0,5)
+- NUNCA menciones "desarrollo", "procedimiento" o "demostración" en el feedback
+- El feedback solo debe decir si es correcto o incorrecto y mostrar la respuesta esperada
+
+Responde SOLO JSON:
+{ "pointsEarned": 0 o ${maxPoints}, "feedback": "Correcto" o "Incorrecto. Respuesta esperada: X" }`;
+
+  // DEBUG: Log completo ANTES de llamar a la IA
+  console.log('\n========== DEBUG MATH with Units ==========');
+  console.log('Modelo:', env.OPENAI_MODEL);
+  console.log('Pregunta:', questionText);
+  console.log('Pauta (correctionCriteria):', correctionCriteria);
+  console.log('Respuesta estudiante:', studentAnswer);
+  console.log('Requiere unidades:', requireUnits);
+  console.log('Puntaje máximo:', maxPoints);
+  console.log('--- PROMPT COMPLETO ---');
+  console.log(prompt);
+  console.log('--- FIN PROMPT ---');
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un profesor experto en matemáticas. Corriges respuestas de manera justa y pedagógica. Respondes solo en formato JSON válido.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+  });
+
+  const responseText = completion.choices[0]?.message.content || '{}';
+
+  // DEBUG: Log de la respuesta de la IA
+  console.log('--- RESPUESTA IA ---');
+  console.log(responseText);
+  console.log('========== FIN DEBUG MATH ==========\n');
+
+  const parsed = JSON.parse(responseText);
+
+  return {
+    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    feedback: parsed.feedback || 'No se pudo generar feedback.',
+  };
+}
+
+/**
+ * Evaluar ortografía y redacción de todas las respuestas de desarrollo de un estudiante
+ * Se llama UNA vez por estudiante, no por pregunta
+ * @param params - Parámetros de evaluación
+ * @returns Niveles de ortografía y redacción con feedback
+ */
+export async function evaluateSpellingAndWriting(params: {
+  answers: Array<{ questionText: string; answer: string }>;
+  evaluateSpelling: boolean;
+  evaluateWriting: boolean;
+}): Promise<{
+  spellingLevel: number | null;
+  writingLevel: number | null;
+  feedback: string;
+}> {
+  const { answers, evaluateSpelling, evaluateWriting } = params;
+
+  if (!evaluateSpelling && !evaluateWriting) {
+    return { spellingLevel: null, writingLevel: null, feedback: '' };
+  }
+
+  const answersText = answers
+    .map((a, i) => `---\nPregunta ${i + 1}: ${a.questionText}\nRespuesta: ${a.answer}\n---`)
+    .join('\n');
+
+  const prompt = `Eres un evaluador de ortografía y redacción. Evalúa TODAS las respuestas de desarrollo de este estudiante en conjunto.
+
+RESPUESTAS DEL ESTUDIANTE:
+${answersText}
+
+EVALUAR ORTOGRAFÍA: ${evaluateSpelling ? 'SÍ' : 'NO'}
+EVALUAR REDACCIÓN: ${evaluateWriting ? 'SÍ' : 'NO'}
+
+CRITERIOS DE EVALUACIÓN:
+- Excelente (100%): Sin errores o errores mínimos que no afectan la lectura
+- Competente (75%): Pocos errores, no afectan comprensión
+- En desarrollo (50%): Varios errores que distraen al lector
+- Insuficiente (25%): Errores frecuentes que dificultan la comprensión
+- Muy deficiente (0%): Errores graves que impiden entender el texto
+
+INSTRUCCIONES:
+1. Evalúa el conjunto de respuestas, no cada una por separado
+2. Asigna un nivel (0, 25, 50, 75, o 100)
+3. El feedback DEBE ser específico:
+   - Citar errores exactos encontrados
+   - Mostrar la corrección para cada error
+   - Dar ejemplos concretos de cómo mejorar la redacción
+   - Mencionar en qué pregunta está cada error
+
+EJEMPLO DE FEEDBACK ESPECÍFICO:
+"Errores de ortografía: «atravez» → «a través» (pregunta 2), «enserio» → «en serio» (pregunta 4).
+Redacción: En la pregunta 2, la oración «El movimiento que fue causado por la fuerza que se aplicó» es redundante; mejor: «El movimiento fue causado por la fuerza aplicada». Evita oraciones de más de 30 palabras."
+
+IMPORTANTE: No incluyas frases motivacionales genéricas al final del feedback como "¡Sigue así!", "¡Buen intento!", "¡Ánimo!". Termina el feedback con información útil y específica.
+
+Responde SOLO con JSON:
+{
+  "spellingLevel": ${evaluateSpelling ? '<0|25|50|75|100>' : 'null'},
+  "writingLevel": ${evaluateWriting ? '<0|25|50|75|100>' : 'null'},
+  "feedback": "<texto específico con ejemplos>"
 }`;
 
   const completion = await openai.chat.completions.create({
@@ -169,14 +470,14 @@ Responde SOLO con JSON en este formato:
     messages: [
       {
         role: 'system',
-        content: 'Eres un profesor experto en evaluación educativa. Corriges respuestas de manera justa y pedagógica. Respondes solo en formato JSON válido.',
+        content: 'Eres un experto en evaluación de ortografía y redacción en español. Proporcionas feedback específico y constructivo. Respondes solo en formato JSON válido.',
       },
       {
         role: 'user',
         content: prompt,
       },
     ],
-    temperature: 0.3, // Baja para consistencia
+    temperature: 0.3,
     response_format: { type: 'json_object' },
   });
 
@@ -184,8 +485,9 @@ Responde SOLO con JSON en este formato:
   const parsed = JSON.parse(responseText);
 
   return {
-    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
-    feedback: parsed.feedback || 'No se pudo generar feedback.',
+    spellingLevel: typeof parsed.spellingLevel === 'number' ? parsed.spellingLevel : null,
+    writingLevel: typeof parsed.writingLevel === 'number' ? parsed.writingLevel : null,
+    feedback: parsed.feedback || '',
   };
 }
 

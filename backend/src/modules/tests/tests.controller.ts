@@ -83,16 +83,43 @@ export class TestsController {
   async updateTest(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { title, courseId } = req.body;
+      const {
+        title,
+        courseId,
+        // Opciones de corrección
+        requireFalseJustification,
+        falseJustificationPenalty,
+        evaluateSpelling,
+        evaluateWriting,
+        spellingPoints,
+        writingPoints,
+      } = req.body;
       const teacherId = req.teacherId!;
 
       // Al menos un campo debe estar presente
-      if (!title && courseId === undefined) {
+      const hasCorrectionOptions =
+        requireFalseJustification !== undefined ||
+        falseJustificationPenalty !== undefined ||
+        evaluateSpelling !== undefined ||
+        evaluateWriting !== undefined ||
+        spellingPoints !== undefined ||
+        writingPoints !== undefined;
+
+      if (!title && courseId === undefined && !hasCorrectionOptions) {
         res.status(400).json({ error: 'Debe proporcionar al menos un campo para actualizar' });
         return;
       }
 
-      const updatedTest = await testsService.updateTest(id, teacherId, { title, courseId });
+      const updatedTest = await testsService.updateTest(id, teacherId, {
+        title,
+        courseId,
+        requireFalseJustification,
+        falseJustificationPenalty,
+        evaluateSpelling,
+        evaluateWriting,
+        spellingPoints,
+        writingPoints,
+      });
 
       res.status(200).json(updatedTest);
 
@@ -271,7 +298,7 @@ export class TestsController {
       const { id: testId, questionId } = req.params;
       const teacherId = req.teacherId!;
       const updates = req.body;
-      
+
       const updatedQuestion = await testsService.updateQuestion(
         testId,
         questionId,
@@ -308,6 +335,57 @@ export class TestsController {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Error al eliminar la pregunta' });
+      }
+    }
+  }
+
+  /**
+   * POST /api/tests/:id/questions
+   * Crear una nueva pregunta manualmente
+   */
+  async createQuestion(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const teacherId = req.teacherId!;
+      const data = req.body;
+
+      const newQuestion = await testsService.createQuestion(testId, teacherId, data);
+
+      res.status(201).json(newQuestion);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al crear la pregunta' });
+      }
+    }
+  }
+
+  /**
+   * PUT /api/tests/:id/questions/reorder
+   * Reordenar preguntas
+   */
+  async reorderQuestions(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const teacherId = req.teacherId!;
+      const { questionIds } = req.body;
+
+      if (!Array.isArray(questionIds)) {
+        res.status(400).json({ error: 'Se requiere un array de IDs de preguntas' });
+        return;
+      }
+
+      const questions = await testsService.reorderQuestions(testId, teacherId, questionIds);
+
+      res.status(200).json(questions);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al reordenar las preguntas' });
       }
     }
   }
@@ -385,16 +463,44 @@ export class TestsController {
   }
 
   /**
+   * PUT /api/tests/:id/passing-threshold
+   * Actualizar la exigencia (porcentaje mínimo para nota 4.0)
+   */
+  async updatePassingThreshold(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const { passingThreshold } = req.body;
+      const teacherId = req.teacherId!;
+
+      if (passingThreshold === undefined) {
+        res.status(400).json({ error: 'La exigencia es requerida' });
+        return;
+      }
+
+      const result = await testsService.updatePassingThreshold(testId, teacherId, passingThreshold);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al actualizar la exigencia' });
+      }
+    }
+  }
+
+  /**
    * POST /api/tests/:id/send-results
    * Enviar resultados por email a estudiantes
    */
   async sendResults(req: Request, res: Response): Promise<void> {
     try {
       const { id: testId } = req.params;
-      const { studentAttemptIds } = req.body;
+      const { studentAttemptIds, includeGrade = true } = req.body;
       const teacherId = req.teacherId!;
 
-      const result = await testsService.sendResults(testId, teacherId, studentAttemptIds);
+      const result = await testsService.sendResults(testId, teacherId, studentAttemptIds, includeGrade);
 
       res.status(200).json(result);
 

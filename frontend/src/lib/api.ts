@@ -196,9 +196,18 @@ export const testsAPI = {
   },
 
   // Enviar resultados por email
-  sendResults: async (testId: string, studentAttemptIds?: string[]) => {
+  sendResults: async (testId: string, studentAttemptIds?: string[], includeGrade?: boolean) => {
     const response = await apiClient.post(`/api/tests/${testId}/send-results`, {
       studentAttemptIds,
+      includeGrade,
+    });
+    return response.data;
+  },
+
+  // Actualizar la exigencia (porcentaje mínimo para nota 4.0)
+  updatePassingThreshold: async (testId: string, passingThreshold: number) => {
+    const response = await apiClient.put(`/api/tests/${testId}/passing-threshold`, {
+      passingThreshold,
     });
     return response.data;
   },
@@ -234,6 +243,23 @@ export const testsAPI = {
 // ============================================
 
 export const questionsAPI = {
+  // Crear pregunta
+  create: async (testId: string, data: {
+    question_label?: string;
+    question_text: string;
+    type: string;
+    points?: number;
+    options?: string[];
+    correct_answer?: string;
+    correction_criteria?: string;
+  }): Promise<Question> => {
+    const response = await apiClient.post<Question>(
+      `/api/tests/${testId}/questions`,
+      data
+    );
+    return response.data;
+  },
+
   // Actualizar pregunta
   update: async (testId: string, questionId: string, data: UpdateQuestionRequest): Promise<Question> => {
     const response = await apiClient.put<Question>(
@@ -246,6 +272,15 @@ export const questionsAPI = {
   // Eliminar pregunta
   delete: async (testId: string, questionId: string): Promise<void> => {
     await apiClient.delete(`/api/tests/${testId}/questions/${questionId}`);
+  },
+
+  // Reordenar preguntas
+  reorder: async (testId: string, questionIds: string[]): Promise<Question[]> => {
+    const response = await apiClient.put<Question[]>(
+      `/api/tests/${testId}/questions/reorder`,
+      { questionIds }
+    );
+    return response.data;
   },
 };
 
@@ -370,6 +405,21 @@ export const studentAPI = {
       }
     );
     return response.data;
+  },
+
+  // Registrar intento de paste externo (silencioso)
+  recordPasteAttempt: async (attemptId: string, deviceToken: string): Promise<void> => {
+    try {
+      await axios.post(
+        `${API_URL}/api/student/attempt/${attemptId}/paste-attempt`,
+        {},
+        {
+          headers: { 'x-device-token': deviceToken },
+        }
+      );
+    } catch {
+      // Silencioso - no mostrar errores
+    }
   },
 };
 

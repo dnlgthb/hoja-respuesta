@@ -23,6 +23,7 @@ import {
   TrendingUp,
   FileText,
 } from 'lucide-react';
+import MathDisplay from '@/components/MathDisplay';
 
 // ============================================
 // TIPOS
@@ -38,6 +39,7 @@ interface AnswerResult {
   correctAnswer: string | null;
   correctionCriteria: string | null;
   answerValue: string | null;
+  justification?: string | null;
   pointsEarned: number | null;
   aiFeedback: string | null;
 }
@@ -53,7 +55,14 @@ interface StudentResult {
   totalPoints: number;
   maxPoints: number;
   percentage: number;
+  grade: number;
+  passed: boolean;
   answers: AnswerResult[];
+  // Nuevos campos para ortografía/redacción y paste
+  spellingScore?: number | null;
+  writingScore?: number | null;
+  spellingWritingFeedback?: string | null;
+  pasteAttempts?: number;
 }
 
 interface ResultsSummary {
@@ -64,6 +73,13 @@ interface ResultsSummary {
   maxPossiblePoints: number;
   reviewedCount: number;
   sentCount: number;
+  // Estadísticas de notas
+  averageGrade: number;
+  maxGrade: number;
+  minGrade: number;
+  passedCount: number;
+  failedCount: number;
+  passRate: number;
 }
 
 interface ResultsData {
@@ -74,6 +90,8 @@ interface ResultsData {
     course: { id: string; name: string; year: number } | null;
     questionsCount: number;
     closedAt: string | null;
+    passingThreshold: number;
+    correctionCompletedAt: string | null;
   };
   students: StudentResult[];
   summary: ResultsSummary;
@@ -100,6 +118,9 @@ export default function ResultsPage() {
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showCriteriaModal, setShowCriteriaModal] = useState<{ questionNumber: number; criteria: string } | null>(null);
+  const [passingThreshold, setPassingThreshold] = useState(60);
+  const [isSavingThreshold, setIsSavingThreshold] = useState(false);
+  const [includeGradeInEmail, setIncludeGradeInEmail] = useState(true);
 
   // Cargar datos
   const loadData = async () => {
@@ -118,6 +139,38 @@ export default function ResultsPage() {
   useEffect(() => {
     loadData();
   }, [testId]);
+
+  // Inicializar exigencia cuando se cargan los datos
+  useEffect(() => {
+    if (data?.test.passingThreshold) {
+      setPassingThreshold(data.test.passingThreshold);
+    }
+  }, [data?.test.passingThreshold]);
+
+  // Función para calcular nota chilena localmente
+  const calculateGrade = (percentage: number, threshold: number): { grade: number; passed: boolean } => {
+    let grade: number;
+    if (percentage >= threshold) {
+      grade = 4.0 + ((percentage - threshold) * 3.0) / (100 - threshold);
+    } else {
+      grade = 1.0 + (percentage * 3.0) / threshold;
+    }
+    grade = Math.round(grade * 10) / 10;
+    grade = Math.max(1.0, Math.min(7.0, grade));
+    return { grade, passed: grade >= 4.0 };
+  };
+
+  // Guardar exigencia en el servidor
+  const savePassingThreshold = async (newThreshold: number) => {
+    try {
+      setIsSavingThreshold(true);
+      await testsAPI.updatePassingThreshold(testId, newThreshold);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al guardar la exigencia');
+    } finally {
+      setIsSavingThreshold(false);
+    }
+  };
 
   // Toggle selección de estudiante
   const toggleStudentSelection = (studentId: string) => {
@@ -214,7 +267,7 @@ export default function ResultsPage() {
     try {
       setIsSendingEmails(true);
       const ids = selectedStudents.size > 0 ? Array.from(selectedStudents) : undefined;
-      const result = await testsAPI.sendResults(testId, ids);
+      const result = await testsAPI.sendResults(testId, ids, includeGradeInEmail);
 
       setShowSendConfirm(false);
       setSelectedStudents(new Set());
@@ -260,7 +313,7 @@ export default function ResultsPage() {
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -280,7 +333,7 @@ export default function ResultsPage() {
   if (error || !data) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#FBF9F3]">
           <Navbar />
           <div className="max-w-4xl mx-auto px-6 py-8">
             <button
@@ -308,7 +361,7 @@ export default function ResultsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
 
         <div className="max-w-7xl mx-auto px-6 py-8">
@@ -360,8 +413,39 @@ export default function ResultsPage() {
             </div>
           </div>
 
+          {/* Control de Exigencia */}
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700">
+                  Exigencia (% para nota 4.0):
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="50"
+                    max="70"
+                    step="1"
+                    value={passingThreshold}
+                    onChange={(e) => setPassingThreshold(Number(e.target.value))}
+                    onMouseUp={() => savePassingThreshold(passingThreshold)}
+                    onTouchEnd={() => savePassingThreshold(passingThreshold)}
+                    className="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <span className="text-lg font-bold text-gray-900 w-12">{passingThreshold}%</span>
+                  {isSavingThreshold && (
+                    <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-gray-500">
+                Nota 4.0 = {passingThreshold}% de logro | Notas se recalculan automáticamente
+              </div>
+            </div>
+          </div>
+
           {/* Resumen estadístico */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div className="bg-white rounded-lg shadow p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -383,7 +467,7 @@ export default function ResultsPage() {
                   <p className="text-2xl font-bold text-gray-900">
                     {data.summary.averageScore}/{data.summary.maxPossiblePoints}
                   </p>
-                  <p className="text-sm text-gray-500">Promedio</p>
+                  <p className="text-sm text-gray-500">Promedio pts</p>
                 </div>
               </div>
             </div>
@@ -394,22 +478,41 @@ export default function ResultsPage() {
                   <Award className="w-5 h-5 text-yellow-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-gray-900">{data.summary.maxScore}</p>
-                  <p className="text-sm text-gray-500">Puntaje máximo</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {(() => {
+                      const grades = data.students.map(s => calculateGrade(s.percentage, passingThreshold).grade);
+                      return grades.length > 0 ? (grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(1) : '-';
+                    })()}
+                  </p>
+                  <p className="text-sm text-gray-500">Promedio notas</p>
                 </div>
               </div>
             </div>
 
             <div className="bg-white rounded-lg shadow p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <CheckCircle className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {data.summary.reviewedCount}/{data.summary.totalStudents}
+                  <p className="text-2xl font-bold text-green-600">
+                    {data.students.filter(s => calculateGrade(s.percentage, passingThreshold).passed).length}
                   </p>
-                  <p className="text-sm text-gray-500">Revisados</p>
+                  <p className="text-sm text-gray-500">Aprobados</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-600">
+                    {data.students.filter(s => !calculateGrade(s.percentage, passingThreshold).passed).length}
+                  </p>
+                  <p className="text-sm text-gray-500">Reprobados</p>
                 </div>
               </div>
             </div>
@@ -516,10 +619,29 @@ export default function ResultsPage() {
 
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className={`text-lg font-bold ${getScoreColor(student.percentage)}`}>
-                            {student.totalPoints}/{student.maxPoints}
-                          </p>
-                          <p className="text-xs text-gray-500">{student.percentage}%</p>
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <p className={`text-lg font-bold ${getScoreColor(student.percentage)}`}>
+                                {student.totalPoints}/{student.maxPoints}
+                              </p>
+                              <p className="text-xs text-gray-500">{student.percentage}%</p>
+                            </div>
+                            <div className="border-l border-gray-200 pl-3">
+                              {(() => {
+                                const { grade, passed } = calculateGrade(student.percentage, passingThreshold);
+                                return (
+                                  <>
+                                    <p className={`text-lg font-bold ${passed ? 'text-green-600' : 'text-red-600'}`}>
+                                      {grade.toFixed(1)}
+                                    </p>
+                                    <p className={`text-xs ${passed ? 'text-green-500' : 'text-red-500'}`}>
+                                      {passed ? 'Aprobado' : 'Reprobado'}
+                                    </p>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
                         </div>
                         {expandedStudent === student.id ? (
                           <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -545,6 +667,39 @@ export default function ResultsPage() {
                           </button>
                         )}
                       </div>
+
+                      {/* Mostrar puntajes de ortografía/redacción si existen */}
+                      {(student.spellingScore !== null || student.writingScore !== null || student.pasteAttempts !== undefined && student.pasteAttempts > 0) && (
+                        <div className="mb-4 p-4 bg-white rounded-lg border border-gray-200">
+                          <h4 className="font-medium text-gray-900 mb-3">Evaluación Adicional</h4>
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            {student.spellingScore !== null && student.spellingScore !== undefined && (
+                              <div>
+                                <p className="text-gray-500">Ortografía:</p>
+                                <p className="font-bold text-gray-900">{student.spellingScore.toFixed(1)} pts</p>
+                              </div>
+                            )}
+                            {student.writingScore !== null && student.writingScore !== undefined && (
+                              <div>
+                                <p className="text-gray-500">Redacción:</p>
+                                <p className="font-bold text-gray-900">{student.writingScore.toFixed(1)} pts</p>
+                              </div>
+                            )}
+                            {student.pasteAttempts !== undefined && student.pasteAttempts > 0 && (
+                              <div>
+                                <p className="text-gray-500">Intentos de pegar texto externo:</p>
+                                <p className="font-bold text-amber-600">{student.pasteAttempts}</p>
+                              </div>
+                            )}
+                          </div>
+                          {student.spellingWritingFeedback && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <p className="text-gray-500 text-sm mb-1">Feedback de ortografía/redacción:</p>
+                              <p className="text-gray-700 text-sm italic">{student.spellingWritingFeedback}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="space-y-3">
                         {student.answers.map((answer) => (
@@ -597,8 +752,25 @@ export default function ResultsPage() {
                               <div>
                                 <p className="text-gray-500 mb-1">Respuesta del estudiante:</p>
                                 <p className="text-gray-900 bg-gray-50 p-2 rounded">
-                                  {answer.answerValue || <em className="text-gray-400">Sin respuesta</em>}
+                                  {answer.answerValue ? (
+                                    answer.questionType === 'MATH' ? (
+                                      <MathDisplay latex={answer.answerValue} />
+                                    ) : (
+                                      answer.answerValue
+                                    )
+                                  ) : (
+                                    <em className="text-gray-400">Sin respuesta</em>
+                                  )}
                                 </p>
+                                {/* Mostrar justificación para V/F si existe */}
+                                {answer.questionType === 'TRUE_FALSE' && answer.justification && (
+                                  <div className="mt-2">
+                                    <p className="text-gray-500 mb-1">Justificación (V/F Falso):</p>
+                                    <p className="text-gray-900 bg-blue-50 p-2 rounded text-sm">
+                                      {answer.justification}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                               <div>
                                 <p className="text-gray-500 mb-1">Respuesta correcta:</p>
@@ -718,6 +890,19 @@ export default function ResultsPage() {
                   Solo se enviará a estudiantes que tengan email registrado.
                 </p>
               </div>
+
+              <label className="flex items-center gap-3 mb-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeGradeInEmail}
+                  onChange={(e) => setIncludeGradeInEmail(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary w-5 h-5"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Incluir nota en resultados</p>
+                  <p className="text-xs text-gray-500">Exigencia actual: {passingThreshold}%</p>
+                </div>
+              </label>
 
               <div className="flex gap-3">
                 <button

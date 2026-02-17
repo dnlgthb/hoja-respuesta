@@ -4,7 +4,7 @@ import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
 import { analyzeDocument } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
-const { extractTextFromPDF } = require('../../utils/pdfExtractor');
+import { extractTextFromPDF } from '../../utils/pdfExtractor';
 
 
 // Tipos para las operaciones

@@ -26,7 +26,8 @@
       "Bash(powershell -Command:*)",
       "Bash(Remove-Item -Path \"tmpclaude-*\" -Force -ErrorAction SilentlyContinue)",
       "Bash(Remove-Item -Path \"backend\\\\tmpclaude-*\" -Force -ErrorAction SilentlyContinue)",
-      "Bash(Remove-Item -Path \"nul\" -Force -ErrorAction SilentlyContinue)"
+      "Bash(Remove-Item -Path \"nul\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(node:*)"
     ]
   }
 }

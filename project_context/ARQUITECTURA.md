@@ -38,7 +38,8 @@ hoja-respuesta/
 │   │   │       └── student.service.ts
 │   │   └── utils/
 │   │       ├── generateCode.ts  # Genera código 6 chars
-│   │       └── pdfExtractor.js  # Extrae texto de PDF
+│   │       ├── gradeCalculator.ts # Cálculo nota chilena
+│   │       └── pdfExtractor.ts  # Extrae texto de PDF
 │   └── prisma/
 │       └── schema.prisma        # Modelos BD
 │
@@ -161,8 +162,8 @@ hoja-respuesta/
 | **Supabase Storage** | PDFs (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
 | **OpenAI** | Análisis PDF → preguntas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
 | **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
-| **Vercel** | Hosting frontend | — |
-| **Railway** | Hosting backend | — |
+| **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
+| **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
 
 ---
 
@@ -253,7 +254,14 @@ PORT=3001
 
 ### Frontend (.env.local)
 ```
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3001   # local
+NEXT_PUBLIC_API_URL=https://xxx.up.railway.app  # producción (en Vercel)
+```
+
+### Deploy
+```
+Frontend (Vercel):  hoja-respuesta.vercel.app  (futuro: aproba.ai)
+Backend (Railway):  dominio generado por Railway (puerto 3001)
 ```
 
 ---

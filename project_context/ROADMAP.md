@@ -21,6 +21,7 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 | 3 | Frontend profesor | ✅ Completada |
 | 4 | Sistema estudiantes | ✅ Completada |
 | 5 | Corrección y resultados | ✅ Completada |
+| 5.5 | Deploy (Vercel + Railway) | ✅ Completada |
 | 6 | Testing y ajustes | ⏳ Pendiente |
 
 ---
@@ -121,6 +122,17 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 **5.5 Exportación** ✅
 - [x] Exportación a Excel (.xlsx)
 - [x] Incluye nombre, email, puntaje, porcentaje por estudiante
+
+### Fase 5.5: Deploy ✅
+- [x] Frontend desplegado en Vercel (hoja-respuesta.vercel.app)
+- [x] Backend desplegado en Railway (con dominio público)
+- [x] Variables de entorno configuradas en ambas plataformas
+- [x] Root Directory configurado en ambos (frontend/ y backend/)
+- [x] Fix tsconfig.json para compatibilidad con build de producción
+- [x] Mover @prisma/client y prisma a dependencies (Railway omite devDependencies)
+- [x] Convertir pdfExtractor.js a TypeScript (tsc no copia .js a dist/)
+- [x] Wrap useSearchParams en Suspense boundary (requerido por Next.js en Vercel)
+- [x] Fix script start del backend (dist/index.js → dist/server.js)
 
 ### Fase 6: Testing y Ajustes ⏳
 - [ ] Pruebas con 30 estudiantes simultáneos

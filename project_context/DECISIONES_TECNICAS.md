@@ -8,7 +8,7 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 | Capa | Tecnología | Justificación |
 |------|------------|---------------|
-| Frontend | Next.js 14 + TypeScript | Mejor soporte de IA, SSR listo, Vercel optimizado |
+| Frontend | Next.js 16 + TypeScript | Mejor soporte de IA, SSR listo, Vercel optimizado |
 | Estilos | Tailwind CSS | Rápido, utility-first, bien documentado |
 | Backend | Express + TypeScript | Ecosistema gigante, IA lo conoce muy bien |
 | ORM | Prisma | Migraciones automáticas, type-safety, Prisma Studio |
@@ -179,6 +179,31 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - axios → Cliente HTTP
 - xlsx → Parseo de archivos Excel/CSV (backend)
 - mathlive → Editor de expresiones matemáticas (LaTeX)
+
+---
+
+## Deploy en Producción
+
+**Frontend:** Vercel (hoja-respuesta.vercel.app)
+- Root Directory: `frontend`
+- Framework: Next.js (auto-detectado)
+- Variable: `NEXT_PUBLIC_API_URL` apuntando al backend en Railway
+
+**Backend:** Railway
+- Root Directory: `backend`
+- Build: `prisma generate && tsc`
+- Start: `node dist/server.js`
+- Variables de entorno configuradas en el dashboard de Railway
+
+**Ajustes necesarios para deploy:**
+
+| Problema | Solución |
+|----------|----------|
+| `verbatimModuleSyntax` en tsconfig incompatible con CommonJS | Reemplazar por tsconfig estándar (module: commonjs, esModuleInterop: true) |
+| `@prisma/client` en devDependencies | Mover a dependencies (Railway omite devDeps en producción) |
+| `pdfExtractor.js` no se copiaba a dist/ | Convertir a TypeScript (.ts) |
+| `useSearchParams()` sin Suspense boundary | Envolver en `<Suspense>` (requerido por Next.js para SSG) |
+| Script start apuntaba a dist/index.js | Corregir a dist/server.js |
 
 ---
 

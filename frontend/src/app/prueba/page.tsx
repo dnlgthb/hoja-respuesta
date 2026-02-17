@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { studentAPI } from '@/lib/api';
 import { FileText, Search, AlertTriangle, CheckCircle2, ArrowLeft, User, Mail } from 'lucide-react';
@@ -29,6 +29,18 @@ interface TestInfo {
 // ============================================
 
 export default function PruebaPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#FBF9F3]">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <PruebaContent />
+    </Suspense>
+  );
+}
+
+function PruebaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 

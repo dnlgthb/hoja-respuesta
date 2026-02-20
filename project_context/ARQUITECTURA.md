@@ -87,7 +87,7 @@ hoja-respuesta/
 | **Teacher** | id, email (unique), password_hash, name | → tests[], courses[] |
 | **Course** | id, teacher_id, name, year | → teacher, students[], tests[] |
 | **CourseStudent** | id, course_id, student_name, student_email? | → course, student_attempts[] |
-| **Test** | id, teacher_id, course_id?, title, status, access_code, pdf_url | → teacher, course?, questions[], student_attempts[] |
+| **Test** | id, teacher_id, course_id?, title, status, access_code, pdf_url, rubric_pdf_url | → teacher, course?, questions[], student_attempts[] |
 | **Question** | id, test_id, question_number, type, question_text, points, options, correct_answer, correction_criteria | → test, answers[] |
 | **StudentAttempt** | id, test_id, course_student_id?, student_name, student_email?, device_token, results_token, status, is_unlocked | → test, course_student?, answers[] |
 | **Answer** | id, student_attempt_id, question_id, answer_value, points_earned, ai_feedback | → student_attempt, question |
@@ -123,7 +123,9 @@ hoja-respuesta/
 | DELETE | `/:id` | Eliminar prueba |
 | POST | `/:id/upload-pdf` | Subir PDF a Supabase |
 | POST | `/:id/analyze-pdf` | Analizar PDF con IA → crear preguntas |
+| POST | `/:id/analyze-rubric` | Subir pauta PDF → IA mapea respuestas a preguntas |
 | POST | `/:id/activate` | Generar código 6 chars, status → ACTIVE |
+| PUT | `/:id/questions/batch` | Actualizar múltiples preguntas (batch) |
 | PUT | `/:id/questions/:questionId` | Actualizar pregunta |
 | DELETE | `/:id/questions/:questionId` | Eliminar pregunta |
 | GET | `/:id/attempts` | **Monitoreo:** Lista estudiantes con estado |
@@ -160,7 +162,7 @@ hoja-respuesta/
 |----------|-----|--------|
 | **Neon** | PostgreSQL | `DATABASE_URL` |
 | **Supabase Storage** | PDFs (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
-| **OpenAI** | Análisis PDF → preguntas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
+| **OpenAI** | Análisis PDF → preguntas, análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
 | **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
 | **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
 | **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
@@ -201,6 +203,18 @@ hoja-respuesta/
 6. IA retorna JSON con preguntas detectadas
 7. Backend crea registros Question en PostgreSQL
 8. Frontend muestra editor de preguntas
+
+### Flujo: Cargar pauta de corrección con IA
+
+1. Profesor tiene prueba con preguntas → clic "Cargar pauta" en editor
+2. Sube PDF de pauta → `POST /api/tests/:id/analyze-rubric`
+3. PDF se guarda en Supabase Storage (`rubrics/`) → guarda `rubric_pdf_url`
+4. Backend extrae texto con `pdfjs-dist`
+5. Texto + preguntas existentes se envían a GPT-4o-mini
+6. IA mapea respuestas/criterios a cada pregunta por número
+7. Frontend muestra preview editable con sugerencias
+8. Profesor revisa/edita y confirma → `PUT /api/tests/:id/questions/batch`
+9. Preguntas se actualizan en batch
 
 ### Flujo: Autenticación
 

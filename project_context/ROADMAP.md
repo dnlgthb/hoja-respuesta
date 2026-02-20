@@ -160,6 +160,12 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Exigir unidades en matemáticas (con penalización configurable)
 - [x] Cálculo de nota chilena (escala 1.0-7.0, nota 4.0 al 60%)
 - [x] Umbral de aprobación configurable por prueba
+- [x] Cargar pauta PDF para auto-rellenar respuestas con IA:
+  - Upload de pauta PDF → IA analiza y mapea respuestas a preguntas
+  - Preview editable de sugerencias antes de aplicar
+  - Batch update de preguntas al confirmar
+  - Soporta V/F, alternativas, desarrollo y matemática
+  - Campo `rubric_pdf_url` en modelo Test
 
 ---
 

@@ -20,7 +20,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:3002',
-    process.env.FRONTEND_URL || 'http://localhost:3000'
+    'https://hoja-respuesta.vercel.app',
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
   ],
   credentials: true,
 }));

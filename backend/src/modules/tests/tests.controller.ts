@@ -590,6 +590,63 @@ export class TestsController {
       }
     }
   }
+
+  /**
+   * POST /api/tests/:id/analyze-rubric
+   * Analizar pauta de corrección PDF con IA
+   */
+  async analyzeRubric(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teacherId = req.teacherId!;
+
+      if (!req.file) {
+        res.status(400).json({ error: 'No se proporcionó ningún archivo' });
+        return;
+      }
+
+      const fileBuffer = req.file.buffer;
+
+      const result = await testsService.analyzeRubric(id, teacherId, fileBuffer);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al analizar la pauta de corrección' });
+      }
+    }
+  }
+
+  /**
+   * PUT /api/tests/:id/questions/batch
+   * Actualizar múltiples preguntas en batch
+   */
+  async batchUpdateQuestions(req: Request, res: Response): Promise<void> {
+    try {
+      const { id: testId } = req.params;
+      const teacherId = req.teacherId!;
+      const { updates } = req.body;
+
+      if (!updates || !Array.isArray(updates) || updates.length === 0) {
+        res.status(400).json({ error: 'Se requiere un array de actualizaciones' });
+        return;
+      }
+
+      const result = await testsService.batchUpdateQuestions(testId, teacherId, updates);
+
+      res.status(200).json(result);
+
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al actualizar las preguntas' });
+      }
+    }
+  }
 }
 
 // Exportar instancia única del controlador

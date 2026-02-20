@@ -491,4 +491,119 @@ Responde SOLO con JSON:
   };
 }
 
+/**
+ * Analizar pauta de corrección y mapear respuestas a preguntas existentes
+ * @param rubricText - Texto extraído del PDF de pauta
+ * @param questions - Preguntas existentes de la prueba
+ * @returns Sugerencias de respuestas/criterios por pregunta
+ */
+export async function analyzeRubric(
+  rubricText: string,
+  questions: Array<{
+    id: string;
+    question_number: number;
+    question_label: string | null;
+    type: string;
+    question_text: string;
+    points: number;
+  }>
+): Promise<Array<{
+  question_id: string;
+  question_number: string;
+  correct_answer: string | null;
+  correction_criteria: string | null;
+  points: number | null;
+  options: {
+    require_justification: boolean;
+    justification_criteria: string | null;
+    evaluate_spelling: boolean;
+    spelling_points: number;
+    evaluate_writing: boolean;
+    writing_points: number;
+    require_units: boolean;
+    unit_penalty: number;
+  };
+}>> {
+  const questionsContext = questions.map(q => ({
+    id: q.id,
+    number: q.question_label || String(q.question_number),
+    type: q.type,
+    text: q.question_text,
+    points: q.points,
+  }));
+
+  const prompt = `Eres un asistente experto en educación. Analiza la pauta de corrección y mapea las respuestas a cada pregunta de la prueba.
+
+PREGUNTAS DE LA PRUEBA:
+${JSON.stringify(questionsContext, null, 2)}
+
+TEXTO DE LA PAUTA DE CORRECCIÓN:
+${rubricText}
+
+INSTRUCCIONES:
+Para cada pregunta, busca en la pauta la respuesta correcta y/o criterio de corrección correspondiente usando el número de pregunta como referencia.
+
+REGLAS POR TIPO:
+- TRUE_FALSE: "correct_answer" = "V" o "F". Si la pauta indica que debe justificar cuando es Falso, activa "require_justification" y llena "justification_criteria".
+- MULTIPLE_CHOICE: "correct_answer" = la letra correcta ("A", "B", "C", "D").
+- DEVELOPMENT: "correct_answer" = respuesta modelo completa. "correction_criteria" = pauta detallada de evaluación con criterios específicos.
+- MATH: "correct_answer" = resultado esperado (en LaTeX si aplica, ej: \\frac{1}{2}). "correction_criteria" = procedimiento esperado paso a paso.
+
+OPCIONES AVANZADAS:
+- Si la pauta menciona "ortografía" → evaluate_spelling: true, spelling_points: puntaje indicado
+- Si la pauta menciona "redacción" → evaluate_writing: true, writing_points: puntaje indicado
+- Si la pauta menciona "unidades" (en preguntas MATH) → require_units: true, unit_penalty: porcentaje indicado (0.5 = 50%)
+- Si NO se menciona, dejar en false/0
+- "points" solo se incluye si la pauta especifica un puntaje DIFERENTE al actual; si no, usar null
+
+IMPORTANTE:
+- Usa el campo "id" de cada pregunta como "question_id" en la respuesta
+- Si no puedes mapear alguna pregunta, incluye "correct_answer": null y "correction_criteria": null
+- El campo "number" corresponde a la nomenclatura visible de la pregunta (puede ser "1", "I.a", "2.b", etc.)
+
+Responde SOLO con JSON válido:
+{
+  "questions": [
+    {
+      "question_id": "id-de-la-pregunta",
+      "question_number": "1",
+      "correct_answer": "valor o null",
+      "correction_criteria": "pauta o null",
+      "points": null,
+      "options": {
+        "require_justification": false,
+        "justification_criteria": null,
+        "evaluate_spelling": false,
+        "spelling_points": 0,
+        "evaluate_writing": false,
+        "writing_points": 0,
+        "require_units": false,
+        "unit_penalty": 0
+      }
+    }
+  ]
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'Eres un experto en análisis de pautas de corrección educativas. Mapeas respuestas correctas y criterios de evaluación a preguntas de pruebas. Respondes solo en formato JSON válido.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+  });
+
+  const responseText = completion.choices[0]?.message.content || '{}';
+  const parsed = JSON.parse(responseText);
+
+  return parsed.questions || [];
+}
+
 export default openai;

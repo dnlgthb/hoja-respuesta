@@ -47,6 +47,8 @@ export interface Test {
   spelling_points?: number | null;
   writingPoints?: number | null;
   writing_points?: number | null;
+  rubricPdfUrl?: string | null;
+  rubric_pdf_url?: string | null;
 }
 
 export interface Question {
@@ -316,6 +318,36 @@ export interface TestAttemptsResponse {
     inProgress: number;
     submitted: number;
   };
+}
+
+// Rubric Analysis
+export interface RubricSuggestion {
+  question_id: string;
+  question_number: string;
+  correct_answer: string | null;
+  correction_criteria: string | null;
+  points: number | null;
+  options: {
+    require_justification: boolean;
+    justification_criteria: string | null;
+    evaluate_spelling: boolean;
+    spelling_points: number;
+    evaluate_writing: boolean;
+    writing_points: number;
+    require_units: boolean;
+    unit_penalty: number;
+  };
+}
+
+export interface AnalyzeRubricResponse {
+  message: string;
+  rubricPdfUrl: string;
+  suggestions: RubricSuggestion[];
+}
+
+export interface BatchUpdateItem {
+  questionId: string;
+  data: Record<string, any>;
 }
 
 // ============================================

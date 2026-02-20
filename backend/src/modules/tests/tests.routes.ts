@@ -18,6 +18,7 @@ router.delete('/:id', (req, res) => testsController.deleteTest(req, res));
 
 // CRUD de preguntas
 router.post('/:id/questions', (req, res) => testsController.createQuestion(req, res));
+router.put('/:id/questions/batch', (req, res) => testsController.batchUpdateQuestions(req, res));
 router.put('/:id/questions/reorder', (req, res) => testsController.reorderQuestions(req, res));
 router.put('/:id/questions/:questionId', (req, res) => testsController.updateQuestion(req, res));
 router.delete('/:id/questions/:questionId', (req, res) => testsController.deleteQuestion(req, res));
@@ -25,6 +26,7 @@ router.delete('/:id/questions/:questionId', (req, res) => testsController.delete
 // Upload y análisis de PDF
 router.post('/:id/upload-pdf', upload.single('pdf'), (req, res) => testsController.uploadPDF(req, res));
 router.post('/:id/analyze-pdf', upload.single('pdf'), (req, res) => testsController.analyzePDF(req, res));
+router.post('/:id/analyze-rubric', upload.single('pdf'), (req, res) => testsController.analyzeRubric(req, res));
 
 // Activar prueba (generar código)
 router.post('/:id/activate', (req, res) => testsController.activateTest(req, res));

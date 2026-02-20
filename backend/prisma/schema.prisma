@@ -92,6 +92,7 @@ model Test {
   evaluate_writing            Boolean @default(false) // Evaluar redacción
   spelling_points             Float?                  // Puntaje asignado a ortografía
   writing_points              Float?                  // Puntaje asignado a redacción
+  rubric_pdf_url              String?                 // URL del PDF de pauta de corrección
 
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)

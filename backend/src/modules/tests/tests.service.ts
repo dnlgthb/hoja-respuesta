@@ -2,7 +2,7 @@
 import prisma from '../../config/database';
 import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
-import { analyzeDocument } from '../../config/openai';
+import { analyzeDocument, analyzeRubric as analyzeRubricAI } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
 import { extractTextFromPDF } from '../../utils/pdfExtractor';
 
@@ -1466,6 +1466,108 @@ for (let i = 0; i < questions.length; i++) {
     }
 
     return { message: 'Pregunta eliminada correctamente' };
+  }
+
+  /**
+   * Analizar pauta de corrección PDF y retornar sugerencias para cada pregunta
+   */
+  async analyzeRubric(testId: string, teacherId: string, fileBuffer: Buffer) {
+    // Verificar que la prueba pertenece al profesor
+    const test = await this.getTestById(testId, teacherId);
+
+    // Verificar que la prueba tenga preguntas
+    const questions = await prisma.question.findMany({
+      where: { test_id: testId },
+      orderBy: { question_number: 'asc' },
+    });
+
+    if (questions.length === 0) {
+      throw new Error('La prueba no tiene preguntas para mapear con la pauta');
+    }
+
+    // Extraer texto del PDF
+    const rubricText = await extractTextFromPDF(fileBuffer);
+
+    if (!rubricText || rubricText.trim().length === 0) {
+      throw new Error('No se pudo extraer texto del PDF de pauta');
+    }
+
+    // Subir PDF a Supabase Storage
+    const timestamp = Date.now();
+    const fileName = `rubrics/${testId}_${timestamp}.pdf`;
+    const rubricPdfUrl = await uploadPDF(fileBuffer, fileName);
+
+    // Guardar URL en el Test
+    await prisma.test.update({
+      where: { id: testId },
+      data: { rubric_pdf_url: rubricPdfUrl },
+    });
+
+    // Preparar preguntas para el análisis
+    const questionsForAI = questions.map(q => ({
+      id: q.id,
+      question_number: q.question_number,
+      question_label: q.question_label,
+      type: q.type,
+      question_text: q.question_text,
+      points: Number(q.points),
+    }));
+
+    // Analizar con IA
+    const suggestions = await analyzeRubricAI(rubricText, questionsForAI);
+
+    return {
+      message: `Pauta analizada. Se encontraron sugerencias para ${suggestions.filter(s => s.correct_answer !== null || s.correction_criteria !== null).length} de ${questions.length} preguntas`,
+      rubricPdfUrl,
+      suggestions,
+    };
+  }
+
+  /**
+   * Actualizar múltiples preguntas en batch (para aplicar pauta)
+   */
+  async batchUpdateQuestions(
+    testId: string,
+    teacherId: string,
+    updates: Array<{ questionId: string; data: Record<string, any> }>
+  ) {
+    // Verificar ownership
+    await this.getTestById(testId, teacherId);
+
+    const results = [];
+    for (const update of updates) {
+      const { questionId, data } = update;
+
+      // Verificar que la pregunta pertenece al test
+      const question = await prisma.question.findFirst({
+        where: { id: questionId, test_id: testId },
+      });
+
+      if (!question) {
+        continue; // Saltar preguntas que no existen
+      }
+
+      // Construir datos de actualización (solo campos válidos)
+      const updateData: Record<string, any> = {};
+      if (data.correct_answer !== undefined) updateData.correct_answer = data.correct_answer;
+      if (data.correction_criteria !== undefined) updateData.correction_criteria = data.correction_criteria;
+      if (data.points !== undefined) updateData.points = data.points;
+      if (data.require_units !== undefined) updateData.require_units = data.require_units;
+      if (data.unit_penalty !== undefined) updateData.unit_penalty = data.unit_penalty;
+
+      if (Object.keys(updateData).length > 0) {
+        const updated = await prisma.question.update({
+          where: { id: questionId },
+          data: updateData,
+        });
+        results.push(updated);
+      }
+    }
+
+    return {
+      message: `${results.length} pregunta(s) actualizada(s)`,
+      updated: results.length,
+    };
   }
 }
 

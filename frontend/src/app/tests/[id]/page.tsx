@@ -6,8 +6,8 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import QuestionEditor from '@/components/QuestionEditor';
 import { testsAPI, questionsAPI, coursesAPI } from '@/lib/api';
-import { Test, Question, Course } from '@/types';
-import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X, Settings, Plus } from 'lucide-react';
+import { Test, Question, Course, RubricSuggestion } from '@/types';
+import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X, Settings, Plus, FileUp, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { QuestionType } from '@/types';
 import { ROUTES } from '@/config/constants';
 
@@ -44,6 +44,15 @@ export default function TestDetailPage() {
   const [spellingPoints, setSpellingPoints] = useState<string>('');
   const [writingPoints, setWritingPoints] = useState<string>('');
   const [hasUnsavedCorrectionOptions, setHasUnsavedCorrectionOptions] = useState(false);
+
+  // Rubric (pauta de corrección)
+  const [showRubricUploadModal, setShowRubricUploadModal] = useState(false);
+  const [showRubricPreviewModal, setShowRubricPreviewModal] = useState(false);
+  const [rubricFile, setRubricFile] = useState<File | null>(null);
+  const [isAnalyzingRubric, setIsAnalyzingRubric] = useState(false);
+  const [rubricSuggestions, setRubricSuggestions] = useState<RubricSuggestion[]>([]);
+  const [editedSuggestions, setEditedSuggestions] = useState<RubricSuggestion[]>([]);
+  const [isApplyingRubric, setIsApplyingRubric] = useState(false);
 
   // Cargar prueba y preguntas
   useEffect(() => {
@@ -352,6 +361,80 @@ export default function TestDetailPage() {
     }
   };
 
+  // Analizar pauta de corrección
+  const handleAnalyzeRubric = async () => {
+    if (!rubricFile) return;
+
+    try {
+      setIsAnalyzingRubric(true);
+      setError(null);
+
+      const result = await testsAPI.analyzeRubric(testId, rubricFile);
+
+      setRubricSuggestions(result.suggestions);
+      setEditedSuggestions(JSON.parse(JSON.stringify(result.suggestions)));
+      setShowRubricUploadModal(false);
+      setShowRubricPreviewModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al analizar la pauta');
+    } finally {
+      setIsAnalyzingRubric(false);
+    }
+  };
+
+  // Aplicar sugerencias de la pauta
+  const handleApplyRubric = async () => {
+    try {
+      setIsApplyingRubric(true);
+      setError(null);
+
+      const updates = editedSuggestions
+        .filter(s => s.correct_answer !== null || s.correction_criteria !== null)
+        .map(s => ({
+          questionId: s.question_id,
+          data: {
+            ...(s.correct_answer !== null && { correct_answer: s.correct_answer }),
+            ...(s.correction_criteria !== null && { correction_criteria: s.correction_criteria }),
+            ...(s.points !== null && { points: s.points }),
+            ...(s.options.require_units && { require_units: true, unit_penalty: s.options.unit_penalty }),
+          },
+        }));
+
+      if (updates.length === 0) {
+        setError('No hay sugerencias para aplicar');
+        setIsApplyingRubric(false);
+        return;
+      }
+
+      await questionsAPI.batchUpdate(testId, updates);
+      await loadTest();
+
+      setShowRubricPreviewModal(false);
+      setRubricSuggestions([]);
+      setEditedSuggestions([]);
+      setRubricFile(null);
+      setSuccessMessage(`Pauta aplicada: ${updates.length} pregunta(s) actualizada(s)`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al aplicar la pauta');
+    } finally {
+      setIsApplyingRubric(false);
+    }
+  };
+
+  // Editar una sugerencia individual
+  const handleEditSuggestion = (index: number, field: string, value: any) => {
+    setEditedSuggestions(prev => {
+      const updated = [...prev];
+      if (field === 'correct_answer' || field === 'correction_criteria') {
+        (updated[index] as any)[field] = value;
+      } else if (field === 'points') {
+        updated[index].points = value;
+      }
+      return updated;
+    });
+  };
+
   const handleBack = () => {
     router.push(ROUTES.DASHBOARD);
   };
@@ -411,19 +494,35 @@ export default function TestDetailPage() {
 
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              {test.title}
-            </h1>
-            <div className="flex items-center gap-4 text-sm text-gray-600">
-              <span>{questions.length} preguntas</span>
-              <span>•</span>
-              {isActive ? (
-                <span className="inline-flex items-center gap-1 text-green-600">
-                  <CheckCircle className="w-4 h-4" />
-                  Activa
-                </span>
-              ) : (
-                <span className="text-gray-500">Borrador</span>
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                  {test.title}
+                </h1>
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <span>{questions.length} preguntas</span>
+                  <span>•</span>
+                  {isActive ? (
+                    <span className="inline-flex items-center gap-1 text-green-600">
+                      <CheckCircle className="w-4 h-4" />
+                      Activa
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">Borrador</span>
+                  )}
+                </div>
+              </div>
+              {questions.length > 0 && (
+                <button
+                  onClick={() => {
+                    setRubricFile(null);
+                    setShowRubricUploadModal(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
+                >
+                  <FileUp className="w-4 h-4" />
+                  Cargar pauta
+                </button>
               )}
             </div>
           </div>
@@ -826,6 +925,278 @@ export default function TestDetailPage() {
                   >
                     <Play className="w-4 h-4" />
                     {isActivating ? 'Activando...' : 'Activar Prueba'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Modal: Cargar Pauta PDF */}
+        {showRubricUploadModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Cargar Pauta de Corrección
+                </h3>
+                <button
+                  onClick={() => setShowRubricUploadModal(false)}
+                  disabled={isAnalyzingRubric}
+                  className="p-1 hover:bg-gray-100 rounded"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                {!isAnalyzingRubric ? (
+                  <>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <FileUp className="w-6 h-6 text-purple-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">Sube la pauta en PDF</p>
+                        <p className="text-sm text-gray-500">
+                          La IA analizará la pauta y sugerirá respuestas para cada pregunta
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        className="block w-full border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                      >
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 10 * 1024 * 1024) {
+                                setError('El archivo no puede superar los 10MB');
+                                return;
+                              }
+                              setRubricFile(file);
+                            }
+                          }}
+                        />
+                        {rubricFile ? (
+                          <div className="flex items-center justify-center gap-2 text-purple-700">
+                            <Check className="w-5 h-5" />
+                            <span className="font-medium">{rubricFile.name}</span>
+                            <span className="text-sm text-gray-500">
+                              ({(rubricFile.size / 1024 / 1024).toFixed(1)} MB)
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <FileUp className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                            <p className="text-gray-600">Haz clic para seleccionar un PDF</p>
+                            <p className="text-xs text-gray-400 mt-1">Máximo 10MB</p>
+                          </div>
+                        )}
+                      </label>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowRubricUploadModal(false)}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 font-medium"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleAnalyzeRubric}
+                        disabled={!rubricFile}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        Analizar pauta
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-8 text-center">
+                    <div className="w-12 h-12 mx-auto mb-4 relative">
+                      <Sparkles className="w-12 h-12 text-purple-500 animate-pulse" />
+                    </div>
+                    <p className="text-lg font-medium text-gray-900 mb-1">Analizando pauta...</p>
+                    <p className="text-sm text-gray-500">La IA está mapeando las respuestas a cada pregunta</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Preview de Sugerencias de Pauta */}
+        {showRubricPreviewModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Sugerencias de la Pauta
+                </h3>
+                <button
+                  onClick={() => setShowRubricPreviewModal(false)}
+                  disabled={isApplyingRubric}
+                  className="p-1 hover:bg-gray-100 rounded"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                <p className="text-sm text-gray-600 mb-4">
+                  Revisa y edita las sugerencias antes de aplicarlas. Las preguntas sin respuesta en la pauta aparecen marcadas.
+                </p>
+
+                <div className="space-y-4">
+                  {editedSuggestions.map((suggestion, index) => {
+                    const question = questions.find(q => q.id === suggestion.question_id);
+                    if (!question) return null;
+
+                    const questionType = question.questionType || question.type;
+                    const currentAnswer = question.correctAnswer || question.correct_answer;
+                    const currentCriteria = question.correctionCriteria || question.correction_criteria;
+                    const hasExisting = !!currentAnswer || !!currentCriteria;
+                    const noSuggestion = suggestion.correct_answer === null && suggestion.correction_criteria === null;
+
+                    return (
+                      <div
+                        key={suggestion.question_id}
+                        className={`border rounded-lg p-4 ${noSuggestion ? 'border-amber-300 bg-amber-50' : hasExisting ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}
+                      >
+                        {/* Header de pregunta */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm font-bold text-gray-700">
+                            {question.questionLabel || question.question_label || suggestion.question_number}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                            {questionType}
+                          </span>
+                          <span className="text-sm text-gray-500 truncate flex-1">
+                            {(question.questionText || question.question_text || '').substring(0, 80)}
+                            {(question.questionText || question.question_text || '').length > 80 ? '...' : ''}
+                          </span>
+                        </div>
+
+                        {/* Advertencias */}
+                        {noSuggestion && (
+                          <div className="flex items-center gap-2 text-amber-700 text-sm mb-3">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                            No se encontró respuesta en la pauta para esta pregunta
+                          </div>
+                        )}
+                        {hasExisting && !noSuggestion && (
+                          <div className="flex items-center gap-2 text-blue-700 text-sm mb-3">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            Esta pregunta ya tiene respuesta configurada. Se sobrescribirá al aplicar.
+                          </div>
+                        )}
+
+                        {/* Campos editables */}
+                        {!noSuggestion && (
+                          <div className="space-y-3">
+                            {/* Respuesta correcta */}
+                            {(questionType === 'TRUE_FALSE' || questionType === 'MULTIPLE_CHOICE') && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Respuesta correcta
+                                </label>
+                                {questionType === 'TRUE_FALSE' ? (
+                                  <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name={`answer-${suggestion.question_id}`}
+                                        value="V"
+                                        checked={suggestion.correct_answer === 'V'}
+                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'V')}
+                                        className="text-purple-600"
+                                      />
+                                      <span className="text-sm text-gray-900">Verdadero</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name={`answer-${suggestion.question_id}`}
+                                        value="F"
+                                        checked={suggestion.correct_answer === 'F'}
+                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'F')}
+                                        className="text-purple-600"
+                                      />
+                                      <span className="text-sm text-gray-900">Falso</span>
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={suggestion.correct_answer || ''}
+                                    onChange={(e) => handleEditSuggestion(index, 'correct_answer', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
+                                    placeholder="Ej: A, B, C, D"
+                                  />
+                                )}
+                              </div>
+                            )}
+
+                            {/* Para DEVELOPMENT y MATH: respuesta modelo + criterio */}
+                            {(questionType === 'DEVELOPMENT' || questionType === 'MATH') && (
+                              <>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Respuesta correcta
+                                  </label>
+                                  <textarea
+                                    value={suggestion.correct_answer || ''}
+                                    onChange={(e) => handleEditSuggestion(index, 'correct_answer', e.target.value)}
+                                    rows={2}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
+                                    placeholder="Respuesta modelo..."
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Pauta de corrección
+                                  </label>
+                                  <textarea
+                                    value={suggestion.correction_criteria || ''}
+                                    onChange={(e) => handleEditSuggestion(index, 'correction_criteria', e.target.value)}
+                                    rows={3}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
+                                    placeholder="Criterios de evaluación..."
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer con botones */}
+              <div className="p-4 border-t flex-shrink-0">
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowRubricPreviewModal(false)}
+                    disabled={isApplyingRubric}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleApplyRubric}
+                    disabled={isApplyingRubric || editedSuggestions.every(s => s.correct_answer === null && s.correction_criteria === null)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    <Check className="w-4 h-4" />
+                    {isApplyingRubric ? 'Aplicando...' : 'Aplicar todo'}
                   </button>
                 </div>
               </div>

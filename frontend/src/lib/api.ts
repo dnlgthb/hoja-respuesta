@@ -26,6 +26,8 @@ import type {
   AddStudentsResponse,
   AvailableStudentsResponse,
   TestAttemptsResponse,
+  AnalyzeRubricResponse,
+  BatchUpdateItem,
 } from '@/types';
 
 // ============================================
@@ -154,6 +156,23 @@ export const testsAPI = {
     return response.data;
   },
 
+  // Analizar pauta de corrección con IA
+  analyzeRubric: async (id: string, file: File): Promise<AnalyzeRubricResponse> => {
+    const formData = new FormData();
+    formData.append('pdf', file);
+
+    const response = await apiClient.post<AnalyzeRubricResponse>(
+      `/api/tests/${id}/analyze-rubric`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
+
   // Activar prueba (genera código)
   activate: async (id: string, durationMinutes: number): Promise<ActivateTestResponse> => {
     const response = await apiClient.post<ActivateTestResponse>(`/api/tests/${id}/activate`, {
@@ -272,6 +291,15 @@ export const questionsAPI = {
   // Eliminar pregunta
   delete: async (testId: string, questionId: string): Promise<void> => {
     await apiClient.delete(`/api/tests/${testId}/questions/${questionId}`);
+  },
+
+  // Actualizar múltiples preguntas en batch
+  batchUpdate: async (testId: string, updates: BatchUpdateItem[]): Promise<{ message: string; updated: number }> => {
+    const response = await apiClient.put<{ message: string; updated: number }>(
+      `/api/tests/${testId}/questions/batch`,
+      { updates }
+    );
+    return response.data;
   },
 
   // Reordenar preguntas

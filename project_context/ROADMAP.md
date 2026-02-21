@@ -166,6 +166,8 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Batch update de preguntas al confirmar
   - Soporta V/F, alternativas, desarrollo y matemática
   - Campo `rubric_pdf_url` en modelo Test
+  - Fix: V/F usa "Verdadero"/"Falso" (no "V"/"F") para coincidir con QuestionEditor
+  - Fix: DEVELOPMENT y MATH mapean a `correction_criteria` (no `correct_answer`)
 
 ---
 

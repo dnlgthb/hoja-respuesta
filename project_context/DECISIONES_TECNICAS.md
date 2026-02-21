@@ -214,6 +214,21 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 ---
 
+## Mapeo de Campos por Tipo de Pregunta
+
+**Convención crítica:** Cada tipo de pregunta usa campos distintos. La pauta IA, el QuestionEditor, y la corrección automática deben respetar esto.
+
+| Tipo | Campo principal | Valor esperado | `correction_criteria` |
+|------|----------------|----------------|----------------------|
+| TRUE_FALSE | `correct_answer` | `"Verdadero"` o `"Falso"` (palabras completas, NUNCA "V"/"F") | Solo si requiere justificación de Falso |
+| MULTIPLE_CHOICE | `correct_answer` | Letra: `"A"`, `"B"`, `"C"`, `"D"` | No se usa |
+| DEVELOPMENT | `correction_criteria` | Pauta/respuesta modelo (texto libre) | `correct_answer` = no se usa |
+| MATH | `correction_criteria` | Resultado numérico/expresión (comparado por IA) | `correct_answer` = no se usa |
+
+**Nota:** La corrección automática (V/F y alternativas) tiene normalización que acepta múltiples formatos ("v", "verdadero", "V", etc.), pero el **QuestionEditor** usa las palabras completas `"Verdadero"`/`"Falso"` como valores de radio buttons. Siempre guardar en ese formato para consistencia visual.
+
+---
+
 ## Editor de Matemáticas (MathLive)
 
 **Decisión:** Usar MathLive para entrada de expresiones matemáticas

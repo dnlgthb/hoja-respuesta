@@ -1125,9 +1125,9 @@ export default function TestDetailPage() {
                                       <input
                                         type="radio"
                                         name={`answer-${suggestion.question_id}`}
-                                        value="V"
-                                        checked={suggestion.correct_answer === 'V'}
-                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'V')}
+                                        value="Verdadero"
+                                        checked={suggestion.correct_answer === 'Verdadero'}
+                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'Verdadero')}
                                         className="text-purple-600"
                                       />
                                       <span className="text-sm text-gray-900">Verdadero</span>
@@ -1136,9 +1136,9 @@ export default function TestDetailPage() {
                                       <input
                                         type="radio"
                                         name={`answer-${suggestion.question_id}`}
-                                        value="F"
-                                        checked={suggestion.correct_answer === 'F'}
-                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'F')}
+                                        value="Falso"
+                                        checked={suggestion.correct_answer === 'Falso'}
+                                        onChange={() => handleEditSuggestion(index, 'correct_answer', 'Falso')}
                                         className="text-purple-600"
                                       />
                                       <span className="text-sm text-gray-900">Falso</span>

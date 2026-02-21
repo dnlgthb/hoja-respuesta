@@ -548,9 +548,9 @@ REGLA FUNDAMENTAL: Tu trabajo es COPIAR/EXTRAER la información de la pauta, NO 
 REGLAS POR TIPO DE PREGUNTA:
 
 1. TRUE_FALSE:
-   - "correct_answer" = "V" o "F" según lo que diga la pauta
-   - Si la pauta dice que la afirmación es verdadera → "V"
-   - Si la pauta dice que es falsa → "F"
+   - "correct_answer" = "Verdadero" o "Falso" (SIEMPRE usar estas palabras completas, NUNCA "V" o "F")
+   - Si la pauta dice que la afirmación es verdadera → "Verdadero"
+   - Si la pauta dice que es falsa → "Falso"
    - Si la pauta indica que el estudiante debe justificar → activa "require_justification" y copia la justificación de la pauta en "justification_criteria"
 
 2. MULTIPLE_CHOICE:

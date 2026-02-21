@@ -189,11 +189,15 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - Framework: Next.js (auto-detectado)
 - Variable: `NEXT_PUBLIC_API_URL` apuntando al backend en Railway
 
-**Backend:** Railway
+**Backend:** Railway (hoja-respuesta-production.up.railway.app)
 - Root Directory: `backend`
 - Build: `prisma generate && tsc`
 - Start: `node dist/server.js`
+- Target Port: dejar vacío (auto-detect, Railway asigna PORT dinámicamente)
 - Variables de entorno configuradas en el dashboard de Railway
+- Variable `FRONTEND_URL` = `https://hoja-respuesta.vercel.app` (para CORS)
+
+**CORS:** La URL de Vercel está hardcodeada en `app.ts` + se lee `FRONTEND_URL` como fallback.
 
 **Ajustes necesarios para deploy:**
 
@@ -204,6 +208,9 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 | `pdfExtractor.js` no se copiaba a dist/ | Convertir a TypeScript (.ts) |
 | `useSearchParams()` sin Suspense boundary | Envolver en `<Suspense>` (requerido por Next.js para SSG) |
 | Script start apuntaba a dist/index.js | Corregir a dist/server.js |
+| Target Port hardcodeado a 3001 en Railway | Dejar vacío: Railway asigna PORT dinámico (ej: 8080), el proxy debe auto-detectar |
+| CORS bloqueaba requests de Vercel | Agregar `https://hoja-respuesta.vercel.app` al whitelist en `app.ts` |
+| `NEXT_PUBLIC_API_URL` sin `https://` | Asegurar que el valor incluya `https://` (sin `:` extra) |
 
 ---
 

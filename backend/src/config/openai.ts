@@ -557,17 +557,17 @@ REGLAS POR TIPO DE PREGUNTA:
    - "correct_answer" = la letra correcta ("A", "B", "C", "D")
 
 3. DEVELOPMENT:
-   - "correct_answer" = COPIAR TEXTUALMENTE la respuesta que da la pauta. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos.
-   - "correction_criteria" = COPIAR TEXTUALMENTE los criterios o rúbrica si la pauta los incluye por separado. Si la pauta solo da la respuesta modelo, dejar null.
+   - "correct_answer" = null (no se usa para desarrollo)
+   - "correction_criteria" = COPIAR TEXTUALMENTE la respuesta/pauta que da el documento. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos. Este texto será usado después por otra IA para corregir.
    - EJEMPLO CORRECTO: Si la pauta dice "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
-     → correct_answer: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
-   - EJEMPLO INCORRECTO: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios.
+     → correct_answer: null, correction_criteria: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
+   - EJEMPLO INCORRECTO: correction_criteria: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios genéricos.
 
 4. MATH:
-   - "correct_answer" = SOLO el resultado numérico o expresión matemática (en LaTeX si aplica, ej: \\frac{1}{2}). NUNCA incluir texto explicativo.
-   - "correction_criteria" = null (para matemáticas solo importa el resultado)
+   - "correct_answer" = null (no se usa para matemáticas)
+   - "correction_criteria" = SOLO el resultado numérico o expresión matemática. NUNCA incluir texto explicativo. Este valor será comparado directamente con la respuesta del estudiante.
    - Si la pauta tiene texto adicional junto al resultado (explicaciones, procedimientos), IGNORAR el texto y extraer SOLO el número/expresión.
-   - EJEMPLO: Si la pauta dice "El resultado es 42 cm, ya que se debe sumar las dos longitudes" → correct_answer: "42 cm", correction_criteria: null
+   - EJEMPLO: Si la pauta dice "El resultado es 42 cm, ya que se debe sumar las dos longitudes" → correct_answer: null, correction_criteria: "42 cm"
 
 OPCIONES AVANZADAS:
 - Si la pauta menciona "ortografía" → evaluate_spelling: true, spelling_points: puntaje indicado

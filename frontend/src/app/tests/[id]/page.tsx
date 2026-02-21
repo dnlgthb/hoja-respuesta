@@ -390,15 +390,28 @@ export default function TestDetailPage() {
 
       const updates = editedSuggestions
         .filter(s => s.correct_answer !== null || s.correction_criteria !== null)
-        .map(s => ({
-          questionId: s.question_id,
-          data: {
-            ...(s.correct_answer !== null && { correct_answer: s.correct_answer }),
-            ...(s.correction_criteria !== null && { correction_criteria: s.correction_criteria }),
-            ...(s.points !== null && { points: s.points }),
-            ...(s.options.require_units && { require_units: true, unit_penalty: s.options.unit_penalty }),
-          },
-        }));
+        .map(s => {
+          const question = questions.find(q => q.id === s.question_id);
+          const qType = question?.questionType || question?.type;
+          const data: Record<string, any> = {};
+
+          // V/F y Alternativas usan correct_answer
+          if (qType === 'TRUE_FALSE' || qType === 'MULTIPLE_CHOICE') {
+            if (s.correct_answer !== null) data.correct_answer = s.correct_answer;
+          }
+          // Desarrollo y Matemática usan correction_criteria
+          if (qType === 'DEVELOPMENT' || qType === 'MATH') {
+            if (s.correction_criteria !== null) data.correction_criteria = s.correction_criteria;
+          }
+          if (s.points !== null) data.points = s.points;
+          if (s.options.require_units) {
+            data.require_units = true;
+            data.unit_penalty = s.options.unit_penalty;
+          }
+
+          return { questionId: s.question_id, data };
+        })
+        .filter(u => Object.keys(u.data).length > 0);
 
       if (updates.length === 0) {
         setError('No hay sugerencias para aplicar');
@@ -1143,34 +1156,36 @@ export default function TestDetailPage() {
                               </div>
                             )}
 
-                            {/* Para DEVELOPMENT y MATH: respuesta modelo + criterio */}
-                            {(questionType === 'DEVELOPMENT' || questionType === 'MATH') && (
-                              <>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                                    Respuesta correcta
-                                  </label>
-                                  <textarea
-                                    value={suggestion.correct_answer || ''}
-                                    onChange={(e) => handleEditSuggestion(index, 'correct_answer', e.target.value)}
-                                    rows={2}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
-                                    placeholder="Respuesta modelo..."
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                                    Pauta de corrección
-                                  </label>
-                                  <textarea
-                                    value={suggestion.correction_criteria || ''}
-                                    onChange={(e) => handleEditSuggestion(index, 'correction_criteria', e.target.value)}
-                                    rows={3}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
-                                    placeholder="Criterios de evaluación..."
-                                  />
-                                </div>
-                              </>
+                            {/* DEVELOPMENT: solo pauta de corrección */}
+                            {questionType === 'DEVELOPMENT' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Pauta de corrección
+                                </label>
+                                <textarea
+                                  value={suggestion.correction_criteria || ''}
+                                  onChange={(e) => handleEditSuggestion(index, 'correction_criteria', e.target.value)}
+                                  rows={4}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
+                                  placeholder="Pauta de corrección..."
+                                />
+                              </div>
+                            )}
+
+                            {/* MATH: solo respuesta correcta (numérica) */}
+                            {questionType === 'MATH' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Respuesta correcta
+                                </label>
+                                <input
+                                  type="text"
+                                  value={suggestion.correction_criteria || ''}
+                                  onChange={(e) => handleEditSuggestion(index, 'correction_criteria', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-purple-500"
+                                  placeholder="Ej: 42, 3/4, √2"
+                                />
+                              </div>
                             )}
                           </div>
                         )}

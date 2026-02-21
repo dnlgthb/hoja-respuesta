@@ -532,7 +532,7 @@ export async function analyzeRubric(
     points: q.points,
   }));
 
-  const prompt = `Eres un asistente experto en educación. Analiza la pauta de corrección y mapea las respuestas a cada pregunta de la prueba.
+  const prompt = `Eres un asistente que extrae respuestas de una pauta de corrección y las mapea a preguntas de una prueba.
 
 PREGUNTAS DE LA PRUEBA:
 ${JSON.stringify(questionsContext, null, 2)}
@@ -541,13 +541,33 @@ TEXTO DE LA PAUTA DE CORRECCIÓN:
 ${rubricText}
 
 INSTRUCCIONES:
-Para cada pregunta, busca en la pauta la respuesta correcta y/o criterio de corrección correspondiente usando el número de pregunta como referencia.
+Para cada pregunta, busca en la pauta la respuesta correspondiente usando el número de pregunta como referencia.
 
-REGLAS POR TIPO:
-- TRUE_FALSE: "correct_answer" = "V" o "F". Si la pauta indica que debe justificar cuando es Falso, activa "require_justification" y llena "justification_criteria".
-- MULTIPLE_CHOICE: "correct_answer" = la letra correcta ("A", "B", "C", "D").
-- DEVELOPMENT: "correct_answer" = respuesta modelo completa. "correction_criteria" = pauta detallada de evaluación con criterios específicos.
-- MATH: "correct_answer" = resultado esperado (en LaTeX si aplica, ej: \\frac{1}{2}). "correction_criteria" = procedimiento esperado paso a paso.
+REGLA FUNDAMENTAL: Tu trabajo es COPIAR/EXTRAER la información de la pauta, NO interpretarla ni reescribirla. La pauta será usada después por otra IA para corregir respuestas de estudiantes, así que necesita el contenido textual exacto.
+
+REGLAS POR TIPO DE PREGUNTA:
+
+1. TRUE_FALSE:
+   - "correct_answer" = "V" o "F" según lo que diga la pauta
+   - Si la pauta dice que la afirmación es verdadera → "V"
+   - Si la pauta dice que es falsa → "F"
+   - Si la pauta indica que el estudiante debe justificar → activa "require_justification" y copia la justificación de la pauta en "justification_criteria"
+
+2. MULTIPLE_CHOICE:
+   - "correct_answer" = la letra correcta ("A", "B", "C", "D")
+
+3. DEVELOPMENT:
+   - "correct_answer" = COPIAR TEXTUALMENTE la respuesta que da la pauta. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos.
+   - "correction_criteria" = COPIAR TEXTUALMENTE los criterios o rúbrica si la pauta los incluye por separado. Si la pauta solo da la respuesta modelo, dejar null.
+   - EJEMPLO CORRECTO: Si la pauta dice "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
+     → correct_answer: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
+   - EJEMPLO INCORRECTO: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios.
+
+4. MATH:
+   - "correct_answer" = SOLO el resultado numérico o expresión matemática (en LaTeX si aplica, ej: \\frac{1}{2}). NUNCA incluir texto explicativo.
+   - "correction_criteria" = null (para matemáticas solo importa el resultado)
+   - Si la pauta tiene texto adicional junto al resultado (explicaciones, procedimientos), IGNORAR el texto y extraer SOLO el número/expresión.
+   - EJEMPLO: Si la pauta dice "El resultado es 42 cm, ya que se debe sumar las dos longitudes" → correct_answer: "42 cm", correction_criteria: null
 
 OPCIONES AVANZADAS:
 - Si la pauta menciona "ortografía" → evaluate_spelling: true, spelling_points: puntaje indicado

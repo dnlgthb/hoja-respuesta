@@ -51,6 +51,13 @@ export default function TestDetailPage() {
   const [showRubricPreviewModal, setShowRubricPreviewModal] = useState(false);
   const [rubricFile, setRubricFile] = useState<File | null>(null);
   const [isAnalyzingRubric, setIsAnalyzingRubric] = useState(false);
+  const [rubricProgress, setRubricProgress] = useState<{
+    batch: number;
+    totalBatches: number;
+    pages: string;
+    questionsFound: number;
+    message: string;
+  } | null>(null);
   const [rubricSuggestions, setRubricSuggestions] = useState<RubricSuggestion[]>([]);
   const [editedSuggestions, setEditedSuggestions] = useState<RubricSuggestion[]>([]);
   const [isApplyingRubric, setIsApplyingRubric] = useState(false);
@@ -368,9 +375,12 @@ export default function TestDetailPage() {
 
     try {
       setIsAnalyzingRubric(true);
+      setRubricProgress(null);
       setError(null);
 
-      const result = await testsAPI.analyzeRubric(testId, rubricFile);
+      const result = await testsAPI.analyzeRubric(testId, rubricFile, (progress) => {
+        setRubricProgress(progress);
+      });
 
       setRubricSuggestions(result.suggestions);
       setEditedSuggestions(JSON.parse(JSON.stringify(result.suggestions)));
@@ -380,6 +390,7 @@ export default function TestDetailPage() {
       setError(err instanceof Error ? err.message : 'Error al analizar la pauta');
     } finally {
       setIsAnalyzingRubric(false);
+      setRubricProgress(null);
     }
   };
 
@@ -1037,7 +1048,24 @@ export default function TestDetailPage() {
                       <Sparkles className="w-12 h-12 text-purple-500 animate-pulse" />
                     </div>
                     <p className="text-lg font-medium text-gray-900 mb-1">Analizando pauta...</p>
-                    <p className="text-sm text-gray-500">La IA está mapeando las respuestas a cada pregunta</p>
+                    {rubricProgress ? (
+                      <div className="mt-3 px-4">
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div
+                            className="bg-purple-500 h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${(rubricProgress.batch / rubricProgress.totalBatches) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-sm text-gray-500">{rubricProgress.message}</p>
+                        {rubricProgress.questionsFound > 0 && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {rubricProgress.questionsFound} preguntas mapeadas
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">Preparando el análisis...</p>
+                    )}
                   </div>
                 )}
               </div>

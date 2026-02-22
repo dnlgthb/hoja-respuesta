@@ -78,6 +78,16 @@ IMPORTANTE:
 - El campo "number" es STRING (permite "I.a", "2.b", etc.)
 - Si hay puntaje indicado, úsalo; si no, usa 1 punto`;
 
+// Tipo para callback de progreso
+export type ProgressCallback = (data: {
+  type: 'progress';
+  batch: number;
+  totalBatches: number;
+  pages: string;
+  questionsFound: number;
+  message: string;
+}) => void;
+
 /**
  * Analizar un chunk de PDF con vision API
  * @param chunkBase64 - Chunk del PDF en base64
@@ -88,6 +98,7 @@ async function analyzeDocumentChunk(
   chunkBase64: string,
   chunkInfo: string
 ): Promise<any[]> {
+  const startTime = Date.now();
   const completion = await openai.chat.completions.create({
     model: env.OPENAI_MODEL,
     messages: [
@@ -117,24 +128,45 @@ async function analyzeDocumentChunk(
     response_format: { type: 'json_object' },
   });
 
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const responseText = completion.choices[0].message.content || '{}';
   const parsed = JSON.parse(responseText);
-  return parsed.questions || [];
+  const questions = parsed.questions || [];
+
+  // DEBUG: Log sample of first question to check $ delimiters
+  if (questions.length > 0) {
+    const sample = questions[0];
+    console.log(`  📝 [${elapsed}s] Sample Q: text="${(sample.text || '').substring(0, 100)}" | options=${JSON.stringify((sample.options || []).slice(0, 2))}`);
+  }
+
+  return questions;
 }
 
 /**
  * Analizar PDF con vision API y extraer preguntas.
  * Para PDFs grandes (>15 páginas), divide en chunks y procesa cada uno por separado.
  * @param chunks - Array de chunks del PDF (de splitPdfIntoChunks)
+ * @param onProgress - Optional callback para reportar progreso
  * @returns Array de preguntas estructuradas
  */
 export async function analyzeDocument(
-  chunks: Array<{ base64: string; startPage: number; endPage: number; totalPages: number }>
+  chunks: Array<{ base64: string; startPage: number; endPage: number; totalPages: number }>,
+  onProgress?: ProgressCallback
 ) {
   // Un solo chunk → llamada directa
   if (chunks.length === 1) {
     console.log(`📄 Analizando PDF completo (${chunks[0].totalPages} páginas)...`);
-    return analyzeDocumentChunk(chunks[0].base64, `${chunks[0].totalPages} páginas`);
+    onProgress?.({
+      type: 'progress',
+      batch: 1,
+      totalBatches: 1,
+      pages: `1-${chunks[0].totalPages}`,
+      questionsFound: 0,
+      message: `Analizando PDF (${chunks[0].totalPages} páginas)...`,
+    });
+    const questions = await analyzeDocumentChunk(chunks[0].base64, `${chunks[0].totalPages} páginas`);
+    console.log(`📄 Completado: ${questions.length} preguntas encontradas`);
+    return questions;
   }
 
   // Múltiples chunks → procesar secuencialmente para no saturar la API
@@ -144,7 +176,17 @@ export async function analyzeDocument(
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
+    const pagesStr = `${chunk.startPage}-${chunk.endPage}`;
     console.log(`  🔄 Batch ${i + 1}/${chunks.length}: ${chunkInfo}...`);
+
+    onProgress?.({
+      type: 'progress',
+      batch: i + 1,
+      totalBatches: chunks.length,
+      pages: pagesStr,
+      questionsFound: allQuestions.length,
+      message: `Procesando batch ${i + 1} de ${chunks.length} (págs. ${pagesStr})...`,
+    });
 
     const questions = await analyzeDocumentChunk(chunk.base64, chunkInfo);
     console.log(`  ✅ Batch ${i + 1}: ${questions.length} preguntas encontradas`);
@@ -666,6 +708,7 @@ async function analyzeRubricChunk(
   questionsContext: any[],
   chunkInfo?: string
 ): Promise<RubricSuggestion[]> {
+  const startTime = Date.now();
   const userPrompt = buildRubricUserPrompt(questionsContext, chunkInfo);
 
   const completion = await openai.chat.completions.create({
@@ -697,10 +740,14 @@ async function analyzeRubricChunk(
     response_format: { type: 'json_object' },
   });
 
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const responseText = completion.choices[0]?.message.content || '{}';
   const parsed = JSON.parse(responseText);
+  const suggestions = parsed.questions || [];
 
-  return parsed.questions || [];
+  console.log(`  📝 [${elapsed}s] Rubric chunk: ${suggestions.length} mapeos encontrados`);
+
+  return suggestions;
 }
 
 /**
@@ -708,11 +755,13 @@ async function analyzeRubricChunk(
  * Soporta batching: si recibe chunks, procesa cada uno secuencialmente y merge results.
  * @param rubricChunks - Array de chunks del PDF (base64 + metadata)
  * @param questions - Preguntas existentes de la prueba
+ * @param onProgress - Optional callback para reportar progreso
  * @returns Sugerencias de respuestas/criterios por pregunta
  */
 export async function analyzeRubric(
   rubricChunks: Array<{ base64: string; startPage: number; endPage: number; totalPages: number }>,
-  questions: RubricQuestion[]
+  questions: RubricQuestion[],
+  onProgress?: ProgressCallback
 ): Promise<RubricSuggestion[]> {
   const questionsContext = questions.map(q => ({
     id: q.id,
@@ -725,6 +774,14 @@ export async function analyzeRubric(
   // Un solo chunk → llamada directa
   if (rubricChunks.length === 1) {
     console.log(`📋 Analizando pauta completa (${rubricChunks[0].totalPages} páginas)...`);
+    onProgress?.({
+      type: 'progress',
+      batch: 1,
+      totalBatches: 1,
+      pages: `1-${rubricChunks[0].totalPages}`,
+      questionsFound: 0,
+      message: `Analizando pauta (${rubricChunks[0].totalPages} páginas)...`,
+    });
     return analyzeRubricChunk(rubricChunks[0].base64, questionsContext);
   }
 
@@ -736,7 +793,17 @@ export async function analyzeRubric(
   for (let i = 0; i < rubricChunks.length; i++) {
     const chunk = rubricChunks[i];
     const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
+    const pagesStr = `${chunk.startPage}-${chunk.endPage}`;
     console.log(`  🔄 Batch ${i + 1}/${rubricChunks.length}: ${chunkInfo}...`);
+
+    onProgress?.({
+      type: 'progress',
+      batch: i + 1,
+      totalBatches: rubricChunks.length,
+      pages: pagesStr,
+      questionsFound: allSuggestions.length,
+      message: `Procesando batch ${i + 1} de ${rubricChunks.length} (págs. ${pagesStr})...`,
+    });
 
     const suggestions = await analyzeRubricChunk(chunk.base64, questionsContext, chunkInfo);
     console.log(`  ✅ Batch ${i + 1}: ${suggestions.length} mapeos encontrados`);

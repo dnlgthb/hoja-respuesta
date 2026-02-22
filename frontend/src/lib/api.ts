@@ -100,6 +100,78 @@ export const authAPI = {
 };
 
 // ============================================
+// SSE STREAMING HELPER (for long-running AI analysis)
+// ============================================
+
+async function streamingAnalysis<T>(
+  endpoint: string,
+  file: File,
+  onProgress?: (data: { batch: number; totalBatches: number; pages: string; questionsFound: number; message: string }) => void
+): Promise<T> {
+  const formData = new FormData();
+  formData.append('pdf', file);
+
+  const token = getToken();
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    // Try to parse error from JSON response
+    try {
+      const errorData = await response.json();
+      throw new Error(errorData.error || errorData.message || 'Error en la solicitud');
+    } catch (e) {
+      if (e instanceof Error && e.message !== 'Error en la solicitud') throw e;
+      throw new Error(`Error ${response.status}: ${response.statusText}`);
+    }
+  }
+
+  // Read SSE stream
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: T | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete SSE lines
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === 'progress') {
+          onProgress?.(data);
+        } else if (data.type === 'complete') {
+          result = data.data as T;
+        } else if (data.type === 'error') {
+          throw new Error(data.message);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e;
+      }
+    }
+  }
+
+  if (!result) {
+    throw new Error('No se recibió respuesta del servidor');
+  }
+
+  return result;
+}
+
+// ============================================
 // TESTS ENDPOINTS
 // ============================================
 
@@ -139,40 +211,22 @@ export const testsAPI = {
     return response.data;
   },
 
-  // Analizar PDF con IA
-  analyzePDF: async (id: string, file: File): Promise<AnalyzePDFResponse> => {
-    const formData = new FormData();
-    formData.append('pdf', file);
-
-    const response = await apiClient.post<AnalyzePDFResponse>(
-      `/api/tests/${id}/analyze-pdf`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 600_000, // 10 min para PDFs grandes
-      }
-    );
-    return response.data;
+  // Analizar PDF con IA (SSE streaming para progreso)
+  analyzePDF: async (
+    id: string,
+    file: File,
+    onProgress?: (data: { batch: number; totalBatches: number; pages: string; questionsFound: number; message: string }) => void
+  ): Promise<AnalyzePDFResponse> => {
+    return streamingAnalysis<AnalyzePDFResponse>(`/api/tests/${id}/analyze-pdf`, file, onProgress);
   },
 
-  // Analizar pauta de corrección con IA
-  analyzeRubric: async (id: string, file: File): Promise<AnalyzeRubricResponse> => {
-    const formData = new FormData();
-    formData.append('pdf', file);
-
-    const response = await apiClient.post<AnalyzeRubricResponse>(
-      `/api/tests/${id}/analyze-rubric`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 600_000, // 10 min para pautas grandes
-      }
-    );
-    return response.data;
+  // Analizar pauta de corrección con IA (SSE streaming para progreso)
+  analyzeRubric: async (
+    id: string,
+    file: File,
+    onProgress?: (data: { batch: number; totalBatches: number; pages: string; questionsFound: number; message: string }) => void
+  ): Promise<AnalyzeRubricResponse> => {
+    return streamingAnalysis<AnalyzeRubricResponse>(`/api/tests/${id}/analyze-rubric`, file, onProgress);
   },
 
   // Activar prueba (genera código)

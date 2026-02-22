@@ -2,7 +2,7 @@
 import prisma from '../../config/database';
 import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
-import { analyzeDocument, analyzeRubric as analyzeRubricAI } from '../../config/openai';
+import { analyzeDocument, analyzeRubric as analyzeRubricAI, ProgressCallback } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
 import { splitPdfIntoChunks } from '../../utils/pdfExtractor';
 
@@ -358,7 +358,7 @@ export class TestsService {
   /**
    * Analizar PDF con IA y crear preguntas automáticamente
    */
-  async analyzePDF(testId: string, teacherId: string, fileBuffer: Buffer) {
+  async analyzePDF(testId: string, teacherId: string, fileBuffer: Buffer, onProgress?: ProgressCallback) {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
 
@@ -370,7 +370,7 @@ export class TestsService {
     }
 
     // Analizar con OpenAI Vision (divide en batches si es necesario)
-    const questions = await analyzeDocument(chunks);
+    const questions = await analyzeDocument(chunks, onProgress);
 
     if (!questions || questions.length === 0) {
       throw new Error('No se pudieron detectar preguntas en el PDF');
@@ -1476,7 +1476,7 @@ export class TestsService {
   /**
    * Analizar pauta de corrección PDF y retornar sugerencias para cada pregunta
    */
-  async analyzeRubric(testId: string, teacherId: string, fileBuffer: Buffer) {
+  async analyzeRubric(testId: string, teacherId: string, fileBuffer: Buffer, onProgress?: ProgressCallback) {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
 
@@ -1519,7 +1519,7 @@ export class TestsService {
     }));
 
     // Analizar con IA (envía PDF en chunks via vision)
-    const suggestions = await analyzeRubricAI(rubricChunks, questionsForAI);
+    const suggestions = await analyzeRubricAI(rubricChunks, questionsForAI, onProgress);
 
     return {
       message: `Pauta analizada. Se encontraron sugerencias para ${suggestions.filter(s => s.correct_answer !== null || s.correction_criteria !== null).length} de ${questions.length} preguntas`,

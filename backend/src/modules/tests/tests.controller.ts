@@ -206,15 +206,34 @@ export class TestsController {
 
       const fileBuffer = req.file.buffer;
 
-      const result = await testsService.analyzePDF(id, teacherId, fileBuffer);
-      
-      res.status(200).json(result);
-      
+      // SSE streaming para progreso en tiempo real
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no', // Disable nginx buffering
+      });
+
+      const onProgress = (data: any) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      const result = await testsService.analyzePDF(id, teacherId, fileBuffer, onProgress);
+      res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
+      res.end();
+
     } catch (error) {
-      if (error instanceof Error) {
-        res.status(400).json({ error: error.message });
+      // If headers already sent (SSE started), send error as event
+      if (res.headersSent) {
+        const message = error instanceof Error ? error.message : 'Error al analizar el PDF';
+        res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
+        res.end();
       } else {
-        res.status(500).json({ error: 'Error al analizar el PDF' });
+        if (error instanceof Error) {
+          res.status(400).json({ error: error.message });
+        } else {
+          res.status(500).json({ error: 'Error al analizar el PDF' });
+        }
       }
     }
   }
@@ -615,15 +634,33 @@ export class TestsController {
 
       const fileBuffer = req.file.buffer;
 
-      const result = await testsService.analyzeRubric(id, teacherId, fileBuffer);
+      // SSE streaming para progreso en tiempo real
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
 
-      res.status(200).json(result);
+      const onProgress = (data: any) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      const result = await testsService.analyzeRubric(id, teacherId, fileBuffer, onProgress);
+      res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
+      res.end();
 
     } catch (error) {
-      if (error instanceof Error) {
-        res.status(400).json({ error: error.message });
+      if (res.headersSent) {
+        const message = error instanceof Error ? error.message : 'Error al analizar la pauta de corrección';
+        res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
+        res.end();
       } else {
-        res.status(500).json({ error: 'Error al analizar la pauta de corrección' });
+        if (error instanceof Error) {
+          res.status(400).json({ error: error.message });
+        } else {
+          res.status(500).json({ error: 'Error al analizar la pauta de corrección' });
+        }
       }
     }
   }

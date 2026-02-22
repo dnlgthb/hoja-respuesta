@@ -38,6 +38,13 @@ export default function NewTestPage() {
   const [detectedQuestions, setDetectedQuestions] = useState<Question[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    batch: number;
+    totalBatches: number;
+    pages: string;
+    questionsFound: number;
+    message: string;
+  } | null>(null);
 
   // Cursos
   const [courses, setCourses] = useState<Course[]>([]);
@@ -128,8 +135,11 @@ export default function NewTestPage() {
     try {
       setPageState('analyzing');
       setError(null);
+      setAnalysisProgress(null);
 
-      const response = await testsAPI.analyzePDF(currentTest.id, selectedFile);
+      const response = await testsAPI.analyzePDF(currentTest.id, selectedFile, (progress) => {
+        setAnalysisProgress(progress);
+      });
       setDetectedQuestions(response.questions);
       setPageState('results');
     } catch (err) {
@@ -137,6 +147,7 @@ export default function NewTestPage() {
       setPageState('upload');
     } finally {
       setIsLoading(false);
+      setAnalysisProgress(null);
     }
   };
 
@@ -361,9 +372,28 @@ export default function NewTestPage() {
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">
                   Analizando PDF con IA...
                 </h2>
-                <p className="text-gray-600">
-                  Esto puede tomar algunos segundos. Estamos extrayendo las preguntas de tu prueba.
-                </p>
+                {analysisProgress ? (
+                  <div className="mt-4">
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-3">
+                      <div
+                        className="bg-primary h-2.5 rounded-full transition-all duration-500"
+                        style={{ width: `${(analysisProgress.batch / analysisProgress.totalBatches) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-gray-600 text-sm">
+                      {analysisProgress.message}
+                    </p>
+                    {analysisProgress.questionsFound > 0 && (
+                      <p className="text-gray-500 text-xs mt-1">
+                        {analysisProgress.questionsFound} preguntas encontradas hasta ahora
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-gray-600">
+                    Preparando el análisis...
+                  </p>
+                )}
               </div>
             </div>
           )}

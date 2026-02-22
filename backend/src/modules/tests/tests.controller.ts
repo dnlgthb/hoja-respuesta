@@ -193,15 +193,19 @@ export class TestsController {
     try {
       const { id } = req.params;
       const teacherId = req.teacherId!;
-      
+
+      // Timeout extendido para PDFs grandes (10 minutos)
+      req.setTimeout(600_000);
+      res.setTimeout(600_000);
+
       // Validar que se subió un archivo
       if (!req.file) {
         res.status(400).json({ error: 'No se proporcionó ningún archivo' });
         return;
       }
-      
+
       const fileBuffer = req.file.buffer;
-      
+
       const result = await testsService.analyzePDF(id, teacherId, fileBuffer);
       
       res.status(200).json(result);

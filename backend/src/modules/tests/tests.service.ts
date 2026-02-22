@@ -4,7 +4,7 @@ import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
 import { analyzeDocument, analyzeRubric as analyzeRubricAI } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
-import { convertPdfToBase64 } from '../../utils/pdfExtractor';
+import { convertPdfToBase64, splitPdfIntoChunks } from '../../utils/pdfExtractor';
 
 
 // Tipos para las operaciones
@@ -362,15 +362,15 @@ export class TestsService {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
 
-    // Convertir PDF a base64 para envío directo a OpenAI Vision
-    const pdfBase64 = convertPdfToBase64(fileBuffer);
+    // Dividir PDF en chunks para procesamiento eficiente
+    const chunks = await splitPdfIntoChunks(fileBuffer, 15);
 
-    if (!pdfBase64 || pdfBase64.length === 0) {
+    if (!chunks || chunks.length === 0) {
       throw new Error('No se pudo procesar el PDF');
     }
 
-    // Analizar con OpenAI Vision (envía PDF directo)
-    const questions = await analyzeDocument(pdfBase64);
+    // Analizar con OpenAI Vision (divide en batches si es necesario)
+    const questions = await analyzeDocument(chunks);
 
     if (!questions || questions.length === 0) {
       throw new Error('No se pudieron detectar preguntas en el PDF');

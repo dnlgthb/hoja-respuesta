@@ -151,6 +151,7 @@ export const testsAPI = {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: 600_000, // 10 min para PDFs grandes
       }
     );
     return response.data;
@@ -168,6 +169,7 @@ export const testsAPI = {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: 600_000, // 10 min para pautas grandes
       }
     );
     return response.data;

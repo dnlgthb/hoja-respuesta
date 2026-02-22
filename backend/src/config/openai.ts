@@ -2,19 +2,14 @@
 import OpenAI from 'openai';
 import { env } from './env';
 
-// Crear cliente de OpenAI
+// Crear cliente de OpenAI con timeout generoso para PDFs grandes
 const openai = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
+  timeout: 120_000, // 2 minutos por llamada
 });
 
-/**
- * Analizar PDF con vision API y extraer preguntas
- * Envía el PDF directamente a GPT-4o-mini que lo procesa como imágenes internamente
- * @param pdfBase64 - PDF completo codificado en base64
- * @returns Array de preguntas estructuradas
- */
-export async function analyzeDocument(pdfBase64: string) {
-  const systemPrompt = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas.
+// Prompt del sistema para extracción de preguntas (compartido entre llamadas)
+const ANALYZE_SYSTEM_PROMPT = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas.
 
 INSTRUCCIONES:
 1. Analiza el documento PDF y extrae TODAS las preguntas que encuentres.
@@ -79,25 +74,35 @@ IMPORTANTE:
 - El campo "number" es STRING (permite "I.a", "2.b", etc.)
 - Si hay puntaje indicado, úsalo; si no, usa 1 punto`;
 
+/**
+ * Analizar un chunk de PDF con vision API
+ * @param chunkBase64 - Chunk del PDF en base64
+ * @param chunkInfo - Información sobre qué páginas contiene
+ * @returns Array de preguntas extraídas del chunk
+ */
+async function analyzeDocumentChunk(
+  chunkBase64: string,
+  chunkInfo: string
+): Promise<any[]> {
   const completion = await openai.chat.completions.create({
     model: env.OPENAI_MODEL,
     messages: [
       {
         role: 'system',
-        content: systemPrompt,
+        content: ANALYZE_SYSTEM_PROMPT,
       },
       {
         role: 'user',
         content: [
           {
             type: 'text',
-            text: 'Analiza este PDF de una prueba educativa y extrae todas las preguntas.',
+            text: `Analiza este fragmento de una prueba educativa (${chunkInfo}) y extrae todas las preguntas que encuentres. Si no hay preguntas en estas páginas (ej: portada, instrucciones), retorna un JSON con "questions": [].`,
           },
           {
             type: 'file',
             file: {
               filename: 'prueba.pdf',
-              file_data: `data:application/pdf;base64,${pdfBase64}`,
+              file_data: `data:application/pdf;base64,${chunkBase64}`,
             },
           },
         ],
@@ -110,8 +115,40 @@ IMPORTANTE:
 
   const responseText = completion.choices[0].message.content || '{}';
   const parsed = JSON.parse(responseText);
-
   return parsed.questions || [];
+}
+
+/**
+ * Analizar PDF con vision API y extraer preguntas.
+ * Para PDFs grandes (>15 páginas), divide en chunks y procesa cada uno por separado.
+ * @param chunks - Array de chunks del PDF (de splitPdfIntoChunks)
+ * @returns Array de preguntas estructuradas
+ */
+export async function analyzeDocument(
+  chunks: Array<{ base64: string; startPage: number; endPage: number; totalPages: number }>
+) {
+  // Un solo chunk → llamada directa
+  if (chunks.length === 1) {
+    console.log(`📄 Analizando PDF completo (${chunks[0].totalPages} páginas)...`);
+    return analyzeDocumentChunk(chunks[0].base64, `${chunks[0].totalPages} páginas`);
+  }
+
+  // Múltiples chunks → procesar secuencialmente para no saturar la API
+  console.log(`📄 PDF grande: ${chunks[0].totalPages} páginas → ${chunks.length} batches`);
+  const allQuestions: any[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
+    console.log(`  🔄 Batch ${i + 1}/${chunks.length}: ${chunkInfo}...`);
+
+    const questions = await analyzeDocumentChunk(chunk.base64, chunkInfo);
+    console.log(`  ✅ Batch ${i + 1}: ${questions.length} preguntas encontradas`);
+    allQuestions.push(...questions);
+  }
+
+  console.log(`📄 Total: ${allQuestions.length} preguntas extraídas de ${chunks.length} batches`);
+  return allQuestions;
 }
 
 /**

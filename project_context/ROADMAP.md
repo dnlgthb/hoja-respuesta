@@ -168,6 +168,17 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Campo `rubric_pdf_url` en modelo Test
   - Fix: V/F usa "Verdadero"/"Falso" (no "V"/"F") para coincidir con QuestionEditor
   - Fix: DEVELOPMENT y MATH mapean a `correction_criteria` (no `correct_answer`)
+- [x] Migración a Vision API (PDF directo a GPT-4o-mini):
+  - Reemplaza extracción de texto (pdfjs-dist) por envío directo del PDF como base64
+  - Resuelve fórmulas matemáticas rotas, imágenes perdidas, contexto de preguntas anidadas
+  - Aplica tanto a análisis de pruebas como a análisis de pautas de corrección
+  - Nuevos campos en Question: context, has_image, image_description, image_page
+  - Cero dependencias nativas nuevas (sin canvas, sin ImageMagick)
+- [x] Renderizado LaTeX en frontend (RichMathText):
+  - Componente que parsea texto mixto con delimitadores $...$ y $$...$$
+  - Renderiza fórmulas usando MathLive (convertLatexToMarkup)
+  - Integrado en: editor de preguntas, vista estudiante, resultados, modal rúbrica
+  - Fix prompt IA: opciones con imágenes usan "[Ver imagen en el PDF]" en vez de repetir letra
 
 ---
 

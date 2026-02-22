@@ -604,6 +604,10 @@ export class TestsController {
       const { id } = req.params;
       const teacherId = req.teacherId!;
 
+      // Timeout extendido para pautas grandes (10 minutos)
+      req.setTimeout(600_000);
+      res.setTimeout(600_000);
+
       if (!req.file) {
         res.status(400).json({ error: 'No se proporcionó ningún archivo' });
         return;

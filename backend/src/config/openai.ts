@@ -22,13 +22,16 @@ INSTRUCCIONES:
    - Respuesta correcta (si es posible deducirla)
 
 REGLAS CRÍTICAS PARA EXPRESIONES MATEMÁTICAS:
-- Transcribe TODAS las expresiones matemáticas usando formato LaTeX.
-- Fracciones: \\frac{numerador}{denominador}
-- Raíces: \\sqrt{x}, \\sqrt[3]{x}
-- Exponentes: x^{2}, x^{n}
-- Subíndices: x_{1}
-- Símbolos: \\pi, \\geq, \\leq, \\neq, \\sim, \\vec{v}
-- Intervalos: [p, q], ]p, q[, [p, q[, ]p, q]
+- Transcribe TODAS las expresiones matemáticas usando formato LaTeX SIEMPRE envueltas en delimitadores $...$
+- SIEMPRE usa $...$ para delimitar expresiones matemáticas inline. Ejemplo: "Calcula $\\frac{3}{4} + \\frac{2}{8}$"
+- NUNCA escribas comandos LaTeX sin delimitadores $. Incorrecto: "\\frac{3}{4}" Correcto: "$\\frac{3}{4}$"
+- NUNCA escribas \\cdot, \\times, \\pi etc. sin envolverlos en $...$. Incorrecto: "3 \\cdot 5" Correcto: "$3 \\cdot 5$"
+- Fracciones: $\\frac{numerador}{denominador}$
+- Raíces: $\\sqrt{x}$, $\\sqrt[3]{x}$
+- Exponentes: $x^{2}$, $x^{n}$
+- Subíndices: $x_{1}$
+- Símbolos: $\\pi$, $\\geq$, $\\leq$, $\\neq$, $\\sim$, $\\vec{v}$
+- Intervalos: $[p, q]$, $]p, q[$, $[p, q[$, $]p, q]$
 
 REGLAS PARA PREGUNTAS CON IMÁGENES/FIGURAS:
 - Si una pregunta incluye una figura, diagrama, tabla o imagen, indícalo en el campo "has_image": true
@@ -41,15 +44,16 @@ REGLAS PARA PREGUNTAS ANIDADAS/COMPUESTAS:
 
 REGLAS PARA PREGUNTAS DE OPCIÓN MÚLTIPLE:
 - Las opciones deben incluir la letra (A, B, C, D) y el contenido completo.
-- Si una opción contiene una expresión matemática, transcríbela en LaTeX.
+- Si una opción contiene una expresión matemática, transcríbela en LaTeX con delimitadores $...$. Ejemplo: "A) $\\frac{1}{2}$"
 - Si una opción es una imagen o gráfico que puedes interpretar, describe su contenido (ej: "A) Gráfico de parábola con vértice en (2,3)").
 - Si una opción es una imagen o gráfico que NO puedes interpretar, escribe "A) [Ver imagen en el PDF]". NUNCA escribas solo la letra repetida como "A) A)" o "B) B)".
 - Si TODAS las opciones son imágenes que no puedes leer, marca has_image: true e indica en image_description que las opciones son gráficas.
 
 REGLA MÁS IMPORTANTE - TEXTO DE LA PREGUNTA:
 El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.
-EJEMPLO CORRECTO: "Calcula y simplifica: \\frac{3}{4} + \\frac{2}{8}"
-EJEMPLO INCORRECTO: "\\frac{3}{4} + \\frac{2}{8}" (falta la instrucción)
+EJEMPLO CORRECTO: "Calcula y simplifica: $\\frac{3}{4} + \\frac{2}{8}$"
+EJEMPLO INCORRECTO: "\\frac{3}{4} + \\frac{2}{8}" (falta la instrucción y los delimitadores $)
+EJEMPLO INCORRECTO: "Calcula \\frac{3}{4}" (falta delimitadores $...$ alrededor del LaTeX)
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
 {
@@ -550,23 +554,16 @@ Responde SOLO con JSON:
   };
 }
 
-/**
- * Analizar pauta de corrección y mapear respuestas a preguntas existentes
- * @param rubricText - Texto extraído del PDF de pauta
- * @param questions - Preguntas existentes de la prueba
- * @returns Sugerencias de respuestas/criterios por pregunta
- */
-export async function analyzeRubric(
-  rubricPdfBase64: string,
-  questions: Array<{
-    id: string;
-    question_number: number;
-    question_label: string | null;
-    type: string;
-    question_text: string;
-    points: number;
-  }>
-): Promise<Array<{
+type RubricQuestion = {
+  id: string;
+  question_number: number;
+  question_label: string | null;
+  type: string;
+  question_text: string;
+  points: number;
+};
+
+type RubricSuggestion = {
   question_id: string;
   question_number: string;
   correct_answer: string | null;
@@ -582,19 +579,17 @@ export async function analyzeRubric(
     require_units: boolean;
     unit_penalty: number;
   };
-}>> {
-  const questionsContext = questions.map(q => ({
-    id: q.id,
-    number: q.question_label || String(q.question_number),
-    type: q.type,
-    text: q.question_text,
-    points: q.points,
-  }));
+};
 
-  const systemPrompt = `Eres un experto en análisis de pautas de corrección educativas. Mapeas respuestas correctas y criterios de evaluación a preguntas de pruebas. Respondes solo en formato JSON válido.`;
+const RUBRIC_SYSTEM_PROMPT = `Eres un experto en análisis de pautas de corrección educativas. Mapeas respuestas correctas y criterios de evaluación a preguntas de pruebas. Respondes solo en formato JSON válido.`;
 
-  const userPrompt = `Extrae las respuestas de esta pauta de corrección PDF y mapéalas a las preguntas de la prueba.
+function buildRubricUserPrompt(questionsContext: any[], chunkInfo?: string): string {
+  const chunkNote = chunkInfo
+    ? `\n\nNOTA: Este es un fragmento de la pauta (${chunkInfo}). Solo extrae las respuestas que encuentres en ESTE fragmento. Si una pregunta no tiene respuesta en este fragmento, NO la incluyas en la respuesta.\n`
+    : '';
 
+  return `Extrae las respuestas de esta pauta de corrección PDF y mapéalas a las preguntas de la prueba.
+${chunkNote}
 PREGUNTAS DE LA PRUEBA:
 ${JSON.stringify(questionsContext, null, 2)}
 
@@ -636,7 +631,7 @@ OPCIONES AVANZADAS:
 
 IMPORTANTE:
 - Usa el campo "id" de cada pregunta como "question_id" en la respuesta
-- Si no puedes mapear alguna pregunta, incluye "correct_answer": null y "correction_criteria": null
+- Si no puedes mapear alguna pregunta en este fragmento, simplemente no la incluyas
 - El campo "number" corresponde a la nomenclatura visible de la pregunta (puede ser "1", "I.a", "2.b", etc.)
 
 Responde SOLO con JSON válido:
@@ -661,13 +656,24 @@ Responde SOLO con JSON válido:
     }
   ]
 }`;
+}
+
+/**
+ * Analizar un chunk de pauta de corrección con IA
+ */
+async function analyzeRubricChunk(
+  chunkBase64: string,
+  questionsContext: any[],
+  chunkInfo?: string
+): Promise<RubricSuggestion[]> {
+  const userPrompt = buildRubricUserPrompt(questionsContext, chunkInfo);
 
   const completion = await openai.chat.completions.create({
     model: env.OPENAI_MODEL,
     messages: [
       {
         role: 'system',
-        content: systemPrompt,
+        content: RUBRIC_SYSTEM_PROMPT,
       },
       {
         role: 'user',
@@ -680,7 +686,7 @@ Responde SOLO con JSON válido:
             type: 'file',
             file: {
               filename: 'pauta.pdf',
-              file_data: `data:application/pdf;base64,${rubricPdfBase64}`,
+              file_data: `data:application/pdf;base64,${chunkBase64}`,
             },
           },
         ],
@@ -695,6 +701,58 @@ Responde SOLO con JSON válido:
   const parsed = JSON.parse(responseText);
 
   return parsed.questions || [];
+}
+
+/**
+ * Analizar pauta de corrección y mapear respuestas a preguntas existentes
+ * Soporta batching: si recibe chunks, procesa cada uno secuencialmente y merge results.
+ * @param rubricChunks - Array de chunks del PDF (base64 + metadata)
+ * @param questions - Preguntas existentes de la prueba
+ * @returns Sugerencias de respuestas/criterios por pregunta
+ */
+export async function analyzeRubric(
+  rubricChunks: Array<{ base64: string; startPage: number; endPage: number; totalPages: number }>,
+  questions: RubricQuestion[]
+): Promise<RubricSuggestion[]> {
+  const questionsContext = questions.map(q => ({
+    id: q.id,
+    number: q.question_label || String(q.question_number),
+    type: q.type,
+    text: q.question_text,
+    points: q.points,
+  }));
+
+  // Un solo chunk → llamada directa
+  if (rubricChunks.length === 1) {
+    console.log(`📋 Analizando pauta completa (${rubricChunks[0].totalPages} páginas)...`);
+    return analyzeRubricChunk(rubricChunks[0].base64, questionsContext);
+  }
+
+  // Múltiples chunks → procesar secuencialmente y merge
+  console.log(`📋 Pauta grande: ${rubricChunks[0].totalPages} páginas → ${rubricChunks.length} batches`);
+  const allSuggestions: RubricSuggestion[] = [];
+  const seenQuestionIds = new Set<string>();
+
+  for (let i = 0; i < rubricChunks.length; i++) {
+    const chunk = rubricChunks[i];
+    const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
+    console.log(`  🔄 Batch ${i + 1}/${rubricChunks.length}: ${chunkInfo}...`);
+
+    const suggestions = await analyzeRubricChunk(chunk.base64, questionsContext, chunkInfo);
+    console.log(`  ✅ Batch ${i + 1}: ${suggestions.length} mapeos encontrados`);
+
+    // Merge: first answer wins (avoid duplicates)
+    for (const suggestion of suggestions) {
+      if (!seenQuestionIds.has(suggestion.question_id) &&
+          (suggestion.correct_answer !== null || suggestion.correction_criteria !== null)) {
+        seenQuestionIds.add(suggestion.question_id);
+        allSuggestions.push(suggestion);
+      }
+    }
+  }
+
+  console.log(`📋 Total: ${allSuggestions.length} mapeos de ${rubricChunks.length} batches`);
+  return allSuggestions;
 }
 
 export default openai;

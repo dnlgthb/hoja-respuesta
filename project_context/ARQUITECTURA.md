@@ -39,7 +39,7 @@ hoja-respuesta/
 │   │   └── utils/
 │   │       ├── generateCode.ts  # Genera código 6 chars
 │   │       ├── gradeCalculator.ts # Cálculo nota chilena
-│   │       └── pdfExtractor.ts  # Extrae texto de PDF
+│   │       └── pdfExtractor.ts  # Convierte PDF a base64 para Vision API
 │   └── prisma/
 │       └── schema.prisma        # Modelos BD
 │
@@ -68,7 +68,10 @@ hoja-respuesta/
 │       │   ├── Navbar.tsx
 │       │   ├── ProtectedRoute.tsx
 │       │   ├── QuestionEditor.tsx
-│       │   └── TestCard.tsx
+│       │   ├── TestCard.tsx
+│       │   ├── MathField.tsx      # Editor interactivo MathLive (LaTeX)
+│       │   ├── MathDisplay.tsx    # Render LaTeX puro (MathLive)
+│       │   └── RichMathText.tsx   # Render texto mixto + LaTeX ($...$)
 │       ├── lib/
 │       │   ├── api.ts           # Axios + interceptores
 │       │   └── auth.ts          # JWT en localStorage
@@ -88,7 +91,7 @@ hoja-respuesta/
 | **Course** | id, teacher_id, name, year | → teacher, students[], tests[] |
 | **CourseStudent** | id, course_id, student_name, student_email? | → course, student_attempts[] |
 | **Test** | id, teacher_id, course_id?, title, status, access_code, pdf_url, rubric_pdf_url | → teacher, course?, questions[], student_attempts[] |
-| **Question** | id, test_id, question_number, type, question_text, points, options, correct_answer, correction_criteria | → test, answers[] |
+| **Question** | id, test_id, question_number, question_label?, type, question_text, points, options, correct_answer, correction_criteria, context?, has_image, image_description?, image_page? | → test, answers[] |
 | **StudentAttempt** | id, test_id, course_student_id?, student_name, student_email?, device_token, results_token, status, is_unlocked | → test, course_student?, answers[] |
 | **Answer** | id, student_attempt_id, question_id, answer_value, points_earned, ai_feedback | → student_attempt, question |
 
@@ -162,7 +165,7 @@ hoja-respuesta/
 |----------|-----|--------|
 | **Neon** | PostgreSQL | `DATABASE_URL` |
 | **Supabase Storage** | PDFs (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
-| **OpenAI** | Análisis PDF → preguntas, análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
+| **OpenAI** | Vision API: análisis PDF → preguntas (LaTeX, imágenes), análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
 | **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
 | **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
 | **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
@@ -198,20 +201,20 @@ hoja-respuesta/
 1. Profesor sube PDF → `POST /api/tests/:id/upload-pdf`
 2. PDF se guarda en Supabase Storage → retorna URL
 3. Profesor pide análisis → `POST /api/tests/:id/analyze-pdf`
-4. Backend extrae texto con `pdfjs-dist`
-5. Texto se envía a GPT-4o-mini con prompt de extracción
-6. IA retorna JSON con preguntas detectadas
-7. Backend crea registros Question en PostgreSQL
-8. Frontend muestra editor de preguntas
+4. Backend convierte PDF a base64
+5. PDF se envía directo a GPT-4o-mini Vision API (el modelo "ve" las páginas como imágenes)
+6. IA retorna JSON con preguntas detectadas (incluyendo LaTeX para fórmulas, metadata de imágenes, contexto para preguntas anidadas)
+7. Backend crea registros Question en PostgreSQL (con campos: context, has_image, image_description, image_page)
+8. Frontend muestra editor de preguntas con renderizado LaTeX (RichMathText)
 
 ### Flujo: Cargar pauta de corrección con IA
 
 1. Profesor tiene prueba con preguntas → clic "Cargar pauta" en editor
 2. Sube PDF de pauta → `POST /api/tests/:id/analyze-rubric`
 3. PDF se guarda en Supabase Storage (`rubrics/`) → guarda `rubric_pdf_url`
-4. Backend extrae texto con `pdfjs-dist`
-5. Texto + preguntas existentes se envían a GPT-4o-mini
-6. IA mapea respuestas/criterios a cada pregunta por número
+4. Backend convierte PDF a base64
+5. PDF directo + preguntas existentes se envían a GPT-4o-mini Vision API
+6. IA mapea respuestas/criterios a cada pregunta por número (lee fórmulas y diagramas correctamente)
 7. Frontend muestra preview editable con sugerencias
 8. Profesor revisa/edita y confirma → `PUT /api/tests/:id/questions/batch`
 9. Preguntas se actualizan en batch

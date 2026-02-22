@@ -4,7 +4,7 @@ import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
 import { analyzeDocument, analyzeRubric as analyzeRubricAI } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
-import { convertPdfToBase64, splitPdfIntoChunks } from '../../utils/pdfExtractor';
+import { splitPdfIntoChunks } from '../../utils/pdfExtractor';
 
 
 // Tipos para las operaciones
@@ -1490,10 +1490,10 @@ export class TestsService {
       throw new Error('La prueba no tiene preguntas para mapear con la pauta');
     }
 
-    // Convertir PDF a base64 para envío directo a OpenAI Vision
-    const rubricPdfBase64 = convertPdfToBase64(fileBuffer);
+    // Dividir PDF en chunks para procesamiento por batches
+    const rubricChunks = await splitPdfIntoChunks(fileBuffer, 15);
 
-    if (!rubricPdfBase64 || rubricPdfBase64.length === 0) {
+    if (!rubricChunks || rubricChunks.length === 0) {
       throw new Error('No se pudo procesar el PDF de pauta');
     }
 
@@ -1518,8 +1518,8 @@ export class TestsService {
       points: Number(q.points),
     }));
 
-    // Analizar con IA (envía PDF directo via vision)
-    const suggestions = await analyzeRubricAI(rubricPdfBase64, questionsForAI);
+    // Analizar con IA (envía PDF en chunks via vision)
+    const suggestions = await analyzeRubricAI(rubricChunks, questionsForAI);
 
     return {
       message: `Pauta analizada. Se encontraron sugerencias para ${suggestions.filter(s => s.correct_answer !== null || s.correction_criteria !== null).length} de ${questions.length} preguntas`,

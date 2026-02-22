@@ -150,9 +150,35 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 **Razones:**
 - 10x más barato que GPT-4
-- Suficientemente preciso para extracción de texto
+- Suficientemente preciso para extracción visual de preguntas
 - Latencia baja (~2-3 segundos por análisis)
 - Costo estimado: ~$0.01 por PDF, ~$0.002 por corrección
+
+---
+
+## Migración a Vision API (PDF directo)
+
+**Decisión:** Enviar PDFs directamente a GPT-4o-mini como archivos base64 en lugar de extraer texto con pdfjs-dist.
+
+**Problema resuelto:** La extracción de texto con pdfjs-dist perdía:
+- Expresiones matemáticas (fracciones, raíces, exponentes aparecían como cuadrados rotos)
+- Imágenes/diagramas/gráficos se perdían completamente
+- Contexto de preguntas anidadas (enunciados padre)
+
+**Enfoque elegido:** PDF directo a OpenAI (sin librería de conversión a imágenes)
+
+**Alternativas descartadas:**
+
+| Solución | Motivo de descarte |
+|----------|-------------------|
+| `pdf-to-img` | Dependencia nativa de canvas, problemas en Railway |
+| `pdf2pic` | Requiere GraphicsMagick/ImageMagick en el servidor |
+| pdfjs-dist renderizar a canvas | Requiere `canvas` npm (nativo), complicado en producción |
+| **PDF directo a OpenAI** | ✅ Elegida: cero dependencias nativas, OpenAI convierte internamente |
+
+**Campos nuevos en Question:** `context` (enunciado padre), `has_image`, `image_description`, `image_page`
+
+**Aplica a:** Análisis de pruebas (`analyzeDocument`) y análisis de pautas (`analyzeRubric`)
 
 ---
 
@@ -231,13 +257,24 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 ## Editor de Matemáticas (MathLive)
 
-**Decisión:** Usar MathLive para entrada de expresiones matemáticas
+**Decisión:** Usar MathLive para entrada y visualización de expresiones matemáticas
+
+**Componentes:**
+- **MathField:** Editor interactivo con barra de herramientas (fracciones, raíces, exponentes, etc.)
+- **MathDisplay:** Renderizado estático de LaTeX puro (usa `convertLatexToMarkup`)
+- **RichMathText:** Renderizado de texto mixto con LaTeX inline (`$...$` y `$$...$$`)
 
 **Implementación:**
-- Carga dinámica (solo cliente, no SSR)
+- Carga dinámica (solo cliente, no SSR) vía `import('mathlive')`
 - Usa fuentes del sistema (`fontsDirectory = null`)
-- Barra de herramientas con símbolos comunes (fracciones, raíces, exponentes, etc.)
-- Placeholder como texto visible sobre el campo (MathLive no maneja bien placeholders internos)
+- RichMathText parsea delimitadores `$...$` y renderiza cada segmento por separado
+- Si el texto no contiene `$`, retorna texto plano sin cargar MathLive (optimización)
+
+**Dónde se usa RichMathText:**
+- QuestionEditor: header preview de texto de pregunta
+- Vista estudiante: texto de preguntas y opciones de alternativas
+- Resultados: texto de preguntas, respuesta correcta, modal de criterios
+- Editor de prueba: modal de rúbrica
 
 **Razones:**
 - Gratuito y open source

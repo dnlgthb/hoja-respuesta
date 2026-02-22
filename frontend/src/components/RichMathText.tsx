@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 interface RichMathTextProps {
   text: string;
@@ -17,37 +17,30 @@ const BARE_LATEX_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|ap
 
 /**
  * Pre-process text to wrap bare LaTeX commands in $ delimiters.
- * Detects patterns like "\frac{1}{2}" or "3 \cdot 5" without $ wrappers.
  */
 function preprocessLatex(input: string): string {
   if (!input) return input;
 
-  // If already has $ delimiters, return as-is (the parser will handle them)
+  // If already has $ delimiters, return as-is
   if (input.includes('$')) return input;
 
-  // Also handle \(...\) and \[...\] delimiters (convert to $...$ and $$...$$)
+  // Handle \(...\) and \[...\] delimiters
   let processed = input.replace(/\\\((.*?)\\\)/g, (_, math) => `$${math}$`);
   processed = processed.replace(/\\\[(.*?)\\\]/g, (_, math) => `$$${math}$$`);
   if (processed !== input) return processed;
 
-  // Check for bare LaTeX commands
-  if (!BARE_LATEX_PATTERN.test(input)) return input;
+  // Check for bare LaTeX commands - if found, wrap the whole thing
+  if (BARE_LATEX_PATTERN.test(input)) {
+    // Simple approach: wrap entire text in $ if it contains LaTeX commands
+    // This works because if there are no $, the whole text is likely a math expression
+    return `$${input}$`;
+  }
 
-  // Wrap segments containing LaTeX commands in $ delimiters
-  // Strategy: find runs of text that contain LaTeX commands and wrap them
-  return input.replace(
-    // Match sequences that start with a LaTeX command or contain LaTeX within a mathematical context
-    /(?:(?:^|(?<=\s|,|:|;|\()))((?:[^$\s]*\\(?:frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|underline|hat|bar|dot|sum|prod|int|lim|log|ln|sin|cos|tan|text|mathrm|mathbf|left|right)[^$\s]*)+)/g,
-    (match) => `$${match}$`
-  );
+  return input;
 }
 
 /**
  * Parse mixed text+LaTeX into segments.
- * Handles $...$ (inline math) and $$...$$ (display math).
- * Also handles \(...\) and \[...\] delimiters.
- * Detects bare LaTeX commands without delimiters.
- * Unmatched $ are treated as literal text.
  */
 function parseMathText(input: string): Segment[] {
   const processed = preprocessLatex(input);
@@ -61,14 +54,12 @@ function parseMathText(input: string): Segment[] {
   let currentText = '';
 
   while (i < processed.length) {
-    // Escaped dollar sign
     if (processed[i] === '\\' && i + 1 < processed.length && processed[i + 1] === '$') {
       currentText += '$';
       i += 2;
       continue;
     }
 
-    // Display math $$...$$
     if (processed[i] === '$' && i + 1 < processed.length && processed[i + 1] === '$') {
       if (currentText) {
         segments.push({ type: 'text', content: currentText });
@@ -85,7 +76,6 @@ function parseMathText(input: string): Segment[] {
       continue;
     }
 
-    // Inline math $...$
     if (processed[i] === '$') {
       if (currentText) {
         segments.push({ type: 'text', content: currentText });
@@ -114,15 +104,14 @@ function parseMathText(input: string): Segment[] {
 }
 
 /**
- * Create a plain-text fallback by stripping $ delimiters.
- * Used when MathLive fails to load.
+ * Create a plain-text fallback by stripping $ and replacing LaTeX with unicode.
  */
 function stripDollarSigns(text: string): string {
   return text
     .replace(/\$\$/g, '')
     .replace(/\$/g, '')
     .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1/$2)')
-    .replace(/\\sqrt\{([^}]*)\}/g, 'sqrt($1)')
+    .replace(/\\sqrt\{([^}]*)\}/g, '\u221A($1)')
     .replace(/\\cdot/g, '\u00B7')
     .replace(/\\times/g, '\u00D7')
     .replace(/\\div/g, '\u00F7')
@@ -143,27 +132,40 @@ function stripDollarSigns(text: string): string {
     .replace(/\\\\/g, ' ');
 }
 
+// Cache MathLive module to avoid re-importing on every component mount
+let mathLivePromise: Promise<any> | null = null;
+function getMathLive() {
+  if (!mathLivePromise) {
+    mathLivePromise = import('mathlive').then((mod) => {
+      mod.MathfieldElement.fontsDirectory = null;
+      console.log('[RichMathText] MathLive loaded successfully');
+      return mod;
+    }).catch((err) => {
+      console.error('[RichMathText] Failed to load MathLive:', err);
+      mathLivePromise = null; // Allow retry
+      throw err;
+    });
+  }
+  return mathLivePromise;
+}
+
 /**
  * Renders mixed text + LaTeX content.
- * Plain text is shown as-is, $...$ and $$...$$ segments are rendered
- * using MathLive's convertLatexToMarkup.
- * Falls back to unicode-cleaned text if MathLive fails.
+ * Uses state-based rendering (no ref.innerHTML) to avoid React reconciliation issues.
  */
 export default function RichMathText({ text, className }: RichMathTextProps) {
-  const containerRef = useRef<HTMLSpanElement>(null);
   const segments = useMemo(() => parseMathText(text), [text]);
   const hasMath = useMemo(() => segments.some(s => s.type !== 'text'), [segments]);
-  const [mathLoaded, setMathLoaded] = useState(false);
-  const [mathFailed, setMathFailed] = useState(false);
+  const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasMath || !containerRef.current) return;
+    if (!hasMath) return;
 
-    import('mathlive')
+    let cancelled = false;
+
+    getMathLive()
       .then((MathLive) => {
-        MathLive.MathfieldElement.fontsDirectory = null;
-
-        if (!containerRef.current) return;
+        if (cancelled) return;
 
         const html = segments
           .map((seg) => {
@@ -172,7 +174,7 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
-              return `<span>${escaped}</span>`;
+              return escaped;
             }
             try {
               const markup = MathLive.convertLatexToMarkup(seg.content);
@@ -180,35 +182,32 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
                 return `<div style="text-align:center;margin:0.5em 0">${markup}</div>`;
               }
               return markup;
-            } catch {
-              // If a specific expression fails, show it as text
-              return `<span>${seg.content}</span>`;
+            } catch (err) {
+              console.warn('[RichMathText] Failed to render:', seg.content, err);
+              return seg.content;
             }
           })
           .join('');
 
-        containerRef.current.innerHTML = html;
-        setMathLoaded(true);
+        setRenderedHtml(html);
       })
       .catch(() => {
-        setMathFailed(true);
+        // MathLive failed — renderedHtml stays null, fallback shown
       });
+
+    return () => { cancelled = true; };
   }, [segments, hasMath]);
 
-  // No math → plain text, no MathLive needed
+  // No math detected → plain text
   if (!hasMath) {
     return <span className={className}>{text}</span>;
   }
 
-  // MathLive failed → show fallback with unicode replacements
-  if (mathFailed) {
-    return <span className={className}>{stripDollarSigns(text)}</span>;
+  // MathLive rendered successfully → use dangerouslySetInnerHTML (no React conflicts)
+  if (renderedHtml !== null) {
+    return <span className={className} dangerouslySetInnerHTML={{ __html: renderedHtml }} />;
   }
 
-  // Show fallback text until MathLive loads (prevents empty flash)
-  return (
-    <span ref={containerRef} className={className}>
-      {!mathLoaded && stripDollarSigns(text)}
-    </span>
-  );
+  // Fallback while loading or if MathLive failed
+  return <span className={className}>{stripDollarSigns(text)}</span>;
 }

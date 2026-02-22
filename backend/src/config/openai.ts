@@ -8,82 +8,102 @@ const openai = new OpenAI({
 });
 
 /**
- * Analizar texto de un PDF y extraer preguntas
- * @param pdfText - Texto extraído del PDF
+ * Analizar PDF con vision API y extraer preguntas
+ * Envía el PDF directamente a GPT-4o-mini que lo procesa como imágenes internamente
+ * @param pdfBase64 - PDF completo codificado en base64
  * @returns Array de preguntas estructuradas
  */
-export async function analyzeDocument(pdfText: string) {
-  const prompt = `Extrae las preguntas de esta prueba educativa.
+export async function analyzeDocument(pdfBase64: string) {
+  const systemPrompt = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas.
+
+INSTRUCCIONES:
+1. Analiza el documento PDF y extrae TODAS las preguntas que encuentres.
+2. Ignora las páginas de instrucciones, portada y páginas en blanco.
+3. Para cada pregunta identifica:
+   - Número de pregunta (puede ser "1", "1.a", "I", "I.a", etc.)
+   - Tipo: TRUE_FALSE, MULTIPLE_CHOICE, DEVELOPMENT, o MATH
+   - Texto completo del enunciado
+   - Opciones (si aplica)
+   - Respuesta correcta (si es posible deducirla)
+
+REGLAS CRÍTICAS PARA EXPRESIONES MATEMÁTICAS:
+- Transcribe TODAS las expresiones matemáticas usando formato LaTeX.
+- Fracciones: \\frac{numerador}{denominador}
+- Raíces: \\sqrt{x}, \\sqrt[3]{x}
+- Exponentes: x^{2}, x^{n}
+- Subíndices: x_{1}
+- Símbolos: \\pi, \\geq, \\leq, \\neq, \\sim, \\vec{v}
+- Intervalos: [p, q], ]p, q[, [p, q[, ]p, q]
+
+REGLAS PARA PREGUNTAS CON IMÁGENES/FIGURAS:
+- Si una pregunta incluye una figura, diagrama, tabla o imagen, indícalo en el campo "has_image": true
+- En el campo "image_description" describe brevemente qué muestra la imagen (ej: "Gráfico de parábola con vértice en (1, 40)")
+- En el campo "image_page" indica el número de página donde está la imagen
+
+REGLAS PARA PREGUNTAS ANIDADAS/COMPUESTAS:
+- Si hay un enunciado general que aplica a varias sub-preguntas (ej: "Lee el siguiente texto y responde las preguntas 5 a 8"), incluye ese contexto en el campo "context" de CADA sub-pregunta.
+- No omitas el enunciado padre. Cada sub-pregunta debe ser comprensible por sí sola con su campo "context".
+
+REGLAS PARA PREGUNTAS DE OPCIÓN MÚLTIPLE:
+- Las opciones deben incluir la letra (A, B, C, D) y el contenido completo.
+- Si una opción contiene una expresión matemática, transcríbela en LaTeX.
+- Si una opción es una imagen o gráfico, descríbelo.
 
 REGLA MÁS IMPORTANTE - TEXTO DE LA PREGUNTA:
 El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.
+EJEMPLO CORRECTO: "Calcula y simplifica: \\frac{3}{4} + \\frac{2}{8}"
+EJEMPLO INCORRECTO: "\\frac{3}{4} + \\frac{2}{8}" (falta la instrucción)
 
-EJEMPLO CORRECTO para preguntas matemáticas:
-Documento dice: "2. Calcula y simplifica: (3/4) + (2/8) = ___"
-→ text: "Calcula y simplifica: (3/4) + (2/8)"  ← INCLUYE "Calcula y simplifica"
-
-EJEMPLO INCORRECTO:
-→ text: "(3/4) + (2/8)"  ← MAL, falta la instrucción
-
-TIPOS DE PREGUNTA:
-- TRUE_FALSE: Afirmaciones V/F
-- MULTIPLE_CHOICE: Pregunta con opciones (incluir array "options")
-- DEVELOPMENT: Preguntas abiertas/redacción
-- MATH: Cálculos matemáticos
-
-NOMENCLATURA:
-- Usa la numeración exacta del documento: "1", "2", "I.a", "II.b", etc.
-
-Responde SOLO JSON:
+Responde ÚNICAMENTE con un JSON válido con esta estructura:
 {
   "questions": [
     {
       "number": "1",
-      "type": "TRUE_FALSE",
+      "type": "MULTIPLE_CHOICE",
+      "text": "¿Cuál es el resultado de $3 - (-1)(-1-5)$?",
+      "context": null,
+      "options": ["A) $-1$", "B) $-3$", "C) $-12$", "D) $-24$"],
+      "correct_answer": null,
       "points": 1,
-      "text": "El sol es una estrella",
-      "options": null
-    },
-    {
-      "number": "2",
-      "type": "MATH",
-      "points": 2,
-      "text": "Calcula y simplifica: (3/4) + (2/8)",
-      "options": null
-    },
-    {
-      "number": "3",
-      "type": "MATH",
-      "points": 2,
-      "text": "Calcula: √49 + √9",
-      "options": null
+      "has_image": false,
+      "image_description": null,
+      "image_page": null
     }
   ]
 }
 
 IMPORTANTE:
-- El campo "text" DEBE incluir la INSTRUCCIÓN completa (ej: "Calcula y simplifica:", "Calcula:", "Resuelve:")
-- NO omitas las instrucciones, solo la expresión matemática no es suficiente
+- El campo "text" DEBE incluir la INSTRUCCIÓN completa
 - El campo "number" es STRING (permite "I.a", "2.b", etc.)
-- Si hay puntaje indicado, úsalo; si no, usa 1 punto
-
-Documento a analizar:
-${pdfText}`;
+- Si hay puntaje indicado, úsalo; si no, usa 1 punto`;
 
   const completion = await openai.chat.completions.create({
     model: env.OPENAI_MODEL,
     messages: [
       {
         role: 'system',
-        content: 'Eres un experto en análisis de pruebas educativas. Respondes solo en formato JSON válido.',
+        content: systemPrompt,
       },
       {
         role: 'user',
-        content: prompt,
+        content: [
+          {
+            type: 'text',
+            text: 'Analiza este PDF de una prueba educativa y extrae todas las preguntas.',
+          },
+          {
+            type: 'file',
+            file: {
+              filename: 'prueba.pdf',
+              file_data: `data:application/pdf;base64,${pdfBase64}`,
+            },
+          },
+        ],
       },
     ],
-    temperature: 0.3, // Baja temperatura para respuestas más consistentes
-    response_format: { type: 'json_object' }, // Forzar respuesta JSON
+    temperature: 0.3,
+    max_tokens: 16000,
+    response_format: { type: 'json_object' },
   });
 
   const responseText = completion.choices[0].message.content || '{}';
@@ -498,7 +518,7 @@ Responde SOLO con JSON:
  * @returns Sugerencias de respuestas/criterios por pregunta
  */
 export async function analyzeRubric(
-  rubricText: string,
+  rubricPdfBase64: string,
   questions: Array<{
     id: string;
     question_number: number;
@@ -532,13 +552,12 @@ export async function analyzeRubric(
     points: q.points,
   }));
 
-  const prompt = `Eres un asistente que extrae respuestas de una pauta de corrección y las mapea a preguntas de una prueba.
+  const systemPrompt = `Eres un experto en análisis de pautas de corrección educativas. Mapeas respuestas correctas y criterios de evaluación a preguntas de pruebas. Respondes solo en formato JSON válido.`;
+
+  const userPrompt = `Extrae las respuestas de esta pauta de corrección PDF y mapéalas a las preguntas de la prueba.
 
 PREGUNTAS DE LA PRUEBA:
 ${JSON.stringify(questionsContext, null, 2)}
-
-TEXTO DE LA PAUTA DE CORRECCIÓN:
-${rubricText}
 
 INSTRUCCIONES:
 Para cada pregunta, busca en la pauta la respuesta correspondiente usando el número de pregunta como referencia.
@@ -609,14 +628,27 @@ Responde SOLO con JSON válido:
     messages: [
       {
         role: 'system',
-        content: 'Eres un experto en análisis de pautas de corrección educativas. Mapeas respuestas correctas y criterios de evaluación a preguntas de pruebas. Respondes solo en formato JSON válido.',
+        content: systemPrompt,
       },
       {
         role: 'user',
-        content: prompt,
+        content: [
+          {
+            type: 'text',
+            text: userPrompt,
+          },
+          {
+            type: 'file',
+            file: {
+              filename: 'pauta.pdf',
+              file_data: `data:application/pdf;base64,${rubricPdfBase64}`,
+            },
+          },
+        ],
       },
     ],
     temperature: 0.3,
+    max_tokens: 16000,
     response_format: { type: 'json_object' },
   });
 

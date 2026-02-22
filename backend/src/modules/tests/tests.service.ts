@@ -4,7 +4,7 @@ import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
 import { analyzeDocument, analyzeRubric as analyzeRubricAI } from '../../config/openai';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
-import { extractTextFromPDF } from '../../utils/pdfExtractor';
+import { convertPdfToBase64 } from '../../utils/pdfExtractor';
 
 
 // Tipos para las operaciones
@@ -361,47 +361,52 @@ export class TestsService {
   async analyzePDF(testId: string, teacherId: string, fileBuffer: Buffer) {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
-    
-    // Extraer texto del PDF
-    const pdfText = await extractTextFromPDF(fileBuffer);
-    
-    if (!pdfText || pdfText.trim().length === 0) {
-      throw new Error('No se pudo extraer texto del PDF');
+
+    // Convertir PDF a base64 para envío directo a OpenAI Vision
+    const pdfBase64 = convertPdfToBase64(fileBuffer);
+
+    if (!pdfBase64 || pdfBase64.length === 0) {
+      throw new Error('No se pudo procesar el PDF');
     }
-    
-    // Analizar con OpenAI
-    const questions = await analyzeDocument(pdfText);
-    
+
+    // Analizar con OpenAI Vision (envía PDF directo)
+    const questions = await analyzeDocument(pdfBase64);
+
     if (!questions || questions.length === 0) {
       throw new Error('No se pudieron detectar preguntas en el PDF');
     }
-    // Eliminar preguntas existentes (si las hay)
-await prisma.question.deleteMany({
-  where: { test_id: testId },
-});
 
-// Crear preguntas secuencialmente para evitar race conditions
-const createdQuestions = [];
-for (let i = 0; i < questions.length; i++) {
-  const q = questions[i];
-  // El campo "number" de la IA puede ser string ("I.a") o número
-  const questionLabel = q.number !== undefined ? String(q.number) : String(i + 1);
-  const created = await prisma.question.create({
-    data: {
-      test_id: testId,
-      question_number: i + 1, // Orden secuencial para ordenamiento
-      question_label: questionLabel, // Nomenclatura visible (I.a, II.b, etc.)
-      type: q.type as QuestionType,
-      question_text: q.text,
-      points: q.points || 1,
-      options: q.options || null,
-      correct_answer: null,
-      correction_criteria: null,
-    },
-  });
-  createdQuestions.push(created);
-}
-    
+    // Eliminar preguntas existentes (si las hay)
+    await prisma.question.deleteMany({
+      where: { test_id: testId },
+    });
+
+    // Crear preguntas secuencialmente para evitar race conditions
+    const createdQuestions = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      // El campo "number" de la IA puede ser string ("I.a") o número
+      const questionLabel = q.number !== undefined ? String(q.number) : String(i + 1);
+      const created = await prisma.question.create({
+        data: {
+          test_id: testId,
+          question_number: i + 1, // Orden secuencial para ordenamiento
+          question_label: questionLabel, // Nomenclatura visible (I.a, II.b, etc.)
+          type: q.type as QuestionType,
+          question_text: q.text,
+          points: q.points || 1,
+          options: q.options || null,
+          correct_answer: q.correct_answer || null,
+          correction_criteria: null,
+          context: q.context || null,
+          has_image: q.has_image || false,
+          image_description: q.image_description || null,
+          image_page: q.image_page || null,
+        },
+      });
+      createdQuestions.push(created);
+    }
+
     return {
       message: `Se detectaron ${createdQuestions.length} preguntas`,
       questions: createdQuestions,
@@ -1485,11 +1490,11 @@ for (let i = 0; i < questions.length; i++) {
       throw new Error('La prueba no tiene preguntas para mapear con la pauta');
     }
 
-    // Extraer texto del PDF
-    const rubricText = await extractTextFromPDF(fileBuffer);
+    // Convertir PDF a base64 para envío directo a OpenAI Vision
+    const rubricPdfBase64 = convertPdfToBase64(fileBuffer);
 
-    if (!rubricText || rubricText.trim().length === 0) {
-      throw new Error('No se pudo extraer texto del PDF de pauta');
+    if (!rubricPdfBase64 || rubricPdfBase64.length === 0) {
+      throw new Error('No se pudo procesar el PDF de pauta');
     }
 
     // Subir PDF a Supabase Storage
@@ -1513,8 +1518,8 @@ for (let i = 0; i < questions.length; i++) {
       points: Number(q.points),
     }));
 
-    // Analizar con IA
-    const suggestions = await analyzeRubricAI(rubricText, questionsForAI);
+    // Analizar con IA (envía PDF directo via vision)
+    const suggestions = await analyzeRubricAI(rubricPdfBase64, questionsForAI);
 
     return {
       message: `Pauta analizada. Se encontraron sugerencias para ${suggestions.filter(s => s.correct_answer !== null || s.correction_criteria !== null).length} de ${questions.length} preguntas`,

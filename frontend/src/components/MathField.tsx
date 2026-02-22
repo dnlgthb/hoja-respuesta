@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { MathfieldElement } from 'mathlive';
+import { MATH_TOOLBAR_BUTTONS } from '@/components/MathToolbar';
 
 interface MathFieldProps {
   value: string;
@@ -86,18 +87,7 @@ export default function MathField({ value, onChange, placeholder, disabled }: Ma
     }
   };
 
-  const toolbarButtons = [
-    { label: 'a/b', latex: '\\frac{#0}{#0}', title: 'Fracción' },
-    { label: '√', latex: '\\sqrt{#0}', title: 'Raíz cuadrada' },
-    { label: 'xⁿ', latex: '^{#0}', title: 'Exponente' },
-    { label: 'x₁', latex: '_{#0}', title: 'Subíndice' },
-    { label: 'π', latex: '\\pi', title: 'Pi' },
-    { label: '±', latex: '\\pm', title: 'Más menos' },
-    { label: '∞', latex: '\\infty', title: 'Infinito' },
-    { label: '≠', latex: '\\neq', title: 'Diferente' },
-    { label: '≤', latex: '\\leq', title: 'Menor o igual' },
-    { label: '≥', latex: '\\geq', title: 'Mayor o igual' },
-  ];
+  const toolbarButtons = MATH_TOOLBAR_BUTTONS;
 
   if (!isLoaded) {
     return (

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Question, QuestionType } from '@/types';
 import { Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import MathField from '@/components/MathField';
+import MathToolbar from '@/components/MathToolbar';
 import RichMathText from '@/components/RichMathText';
 
 interface QuestionEditorProps {
@@ -50,6 +51,34 @@ export default function QuestionEditor({
   const [localRequireUnits, setLocalRequireUnits] = useState(requireUnits);
   const [localUnitPenalty, setLocalUnitPenalty] = useState(String(unitPenalty * 100));
   const [isExpanded, setIsExpanded] = useState(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Insertar LaTeX en el textarea del texto de la pregunta
+  const handleInsertLatex = (latex: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // Limpiar placeholders #0 de MathToolbar
+    const cleanLatex = latex.replace(/#0/g, '');
+    // Envolver en $...$ si no lo está
+    const wrapped = cleanLatex.startsWith('$') ? cleanLatex : `$${cleanLatex}$`;
+
+    const before = localText.slice(0, start);
+    const after = localText.slice(end);
+    const newText = before + wrapped + after;
+
+    handleTextChange(newText);
+
+    // Restaurar foco y posicionar cursor dentro de la expresión
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursorPos = start + wrapped.length;
+      textarea.setSelectionRange(cursorPos, cursorPos);
+    });
+  };
 
   useEffect(() => {
     setLocalLabel(questionLabel);
@@ -249,12 +278,17 @@ export default function QuestionEditor({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Texto de la pregunta
             </label>
+            <MathToolbar
+              onInsert={handleInsertLatex}
+              className="rounded-b-none border-b-0"
+            />
             <textarea
+              ref={textareaRef}
               value={localText}
               onChange={(e) => handleTextChange(e.target.value)}
               placeholder="Escribe el enunciado de la pregunta..."
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
+              className="w-full px-3 py-2 border border-gray-300 rounded-t-none rounded-b-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
             />
             {/* Preview renderizado si hay LaTeX */}
             {localText.includes('$') && (

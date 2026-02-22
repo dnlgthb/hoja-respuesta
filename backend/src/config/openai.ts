@@ -750,9 +750,13 @@ async function analyzeRubricChunk(
   return suggestions;
 }
 
+// Máximo de preguntas por llamada a la API para evitar truncamiento de output
+const RUBRIC_QUESTIONS_PER_BATCH = 20;
+
 /**
- * Analizar pauta de corrección y mapear respuestas a preguntas existentes
- * Soporta batching: si recibe chunks, procesa cada uno secuencialmente y merge results.
+ * Analizar pauta de corrección y mapear respuestas a preguntas existentes.
+ * Soporta doble batching: PDF chunks × question batches.
+ * Para 65 preguntas con 1 chunk: ceil(65/20) = 4 llamadas API.
  * @param rubricChunks - Array de chunks del PDF (base64 + metadata)
  * @param questions - Preguntas existentes de la prueba
  * @param onProgress - Optional callback para reportar progreso
@@ -771,54 +775,61 @@ export async function analyzeRubric(
     points: q.points,
   }));
 
-  // Un solo chunk → llamada directa
-  if (rubricChunks.length === 1) {
-    console.log(`📋 Analizando pauta completa (${rubricChunks[0].totalPages} páginas)...`);
-    onProgress?.({
-      type: 'progress',
-      batch: 1,
-      totalBatches: 1,
-      pages: `1-${rubricChunks[0].totalPages}`,
-      questionsFound: 0,
-      message: `Analizando pauta (${rubricChunks[0].totalPages} páginas)...`,
-    });
-    return analyzeRubricChunk(rubricChunks[0].base64, questionsContext);
+  // Dividir preguntas en batches de RUBRIC_QUESTIONS_PER_BATCH
+  const questionBatches: typeof questionsContext[] = [];
+  for (let i = 0; i < questionsContext.length; i += RUBRIC_QUESTIONS_PER_BATCH) {
+    questionBatches.push(questionsContext.slice(i, i + RUBRIC_QUESTIONS_PER_BATCH));
   }
 
-  // Múltiples chunks → procesar secuencialmente y merge
-  console.log(`📋 Pauta grande: ${rubricChunks[0].totalPages} páginas → ${rubricChunks.length} batches`);
+  const totalApiCalls = rubricChunks.length * questionBatches.length;
+  console.log(`📋 Analizando pauta: ${rubricChunks[0].totalPages} páginas, ${questions.length} preguntas → ${rubricChunks.length} PDF chunks × ${questionBatches.length} question batches = ${totalApiCalls} llamadas API`);
+
   const allSuggestions: RubricSuggestion[] = [];
   const seenQuestionIds = new Set<string>();
+  let currentCall = 0;
 
-  for (let i = 0; i < rubricChunks.length; i++) {
-    const chunk = rubricChunks[i];
-    const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
-    const pagesStr = `${chunk.startPage}-${chunk.endPage}`;
-    console.log(`  🔄 Batch ${i + 1}/${rubricChunks.length}: ${chunkInfo}...`);
+  for (let ci = 0; ci < rubricChunks.length; ci++) {
+    const chunk = rubricChunks[ci];
+    const chunkInfo = rubricChunks.length > 1
+      ? `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`
+      : undefined;
 
-    onProgress?.({
-      type: 'progress',
-      batch: i + 1,
-      totalBatches: rubricChunks.length,
-      pages: pagesStr,
-      questionsFound: allSuggestions.length,
-      message: `Procesando batch ${i + 1} de ${rubricChunks.length} (págs. ${pagesStr})...`,
-    });
+    for (let qi = 0; qi < questionBatches.length; qi++) {
+      currentCall++;
+      const qBatch = questionBatches[qi];
+      const qStart = qi * RUBRIC_QUESTIONS_PER_BATCH + 1;
+      const qEnd = qStart + qBatch.length - 1;
 
-    const suggestions = await analyzeRubricChunk(chunk.base64, questionsContext, chunkInfo);
-    console.log(`  ✅ Batch ${i + 1}: ${suggestions.length} mapeos encontrados`);
+      const progressMsg = questionBatches.length > 1
+        ? `Procesando preguntas ${qStart}-${qEnd} (batch ${currentCall} de ${totalApiCalls})...`
+        : `Analizando pauta (${chunk.totalPages} páginas)...`;
 
-    // Merge: first answer wins (avoid duplicates)
-    for (const suggestion of suggestions) {
-      if (!seenQuestionIds.has(suggestion.question_id) &&
-          (suggestion.correct_answer !== null || suggestion.correction_criteria !== null)) {
-        seenQuestionIds.add(suggestion.question_id);
-        allSuggestions.push(suggestion);
+      console.log(`  🔄 [${currentCall}/${totalApiCalls}] Preguntas ${qStart}-${qEnd}${chunkInfo ? `, ${chunkInfo}` : ''}...`);
+
+      onProgress?.({
+        type: 'progress',
+        batch: currentCall,
+        totalBatches: totalApiCalls,
+        pages: chunkInfo ? `${chunk.startPage}-${chunk.endPage}` : `1-${chunk.totalPages}`,
+        questionsFound: allSuggestions.length,
+        message: progressMsg,
+      });
+
+      const suggestions = await analyzeRubricChunk(chunk.base64, qBatch, chunkInfo);
+      console.log(`  ✅ [${currentCall}/${totalApiCalls}] ${suggestions.length} mapeos encontrados`);
+
+      // Merge: first answer wins (avoid duplicates)
+      for (const suggestion of suggestions) {
+        if (!seenQuestionIds.has(suggestion.question_id) &&
+            (suggestion.correct_answer !== null || suggestion.correction_criteria !== null)) {
+          seenQuestionIds.add(suggestion.question_id);
+          allSuggestions.push(suggestion);
+        }
       }
     }
   }
 
-  console.log(`📋 Total: ${allSuggestions.length} mapeos de ${rubricChunks.length} batches`);
+  console.log(`📋 Total: ${allSuggestions.length}/${questions.length} preguntas mapeadas en ${totalApiCalls} llamadas`);
   return allSuggestions;
 }
 

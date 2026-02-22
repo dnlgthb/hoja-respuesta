@@ -256,6 +256,13 @@ export default function QuestionEditor({
               rows={2}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
             />
+            {/* Preview renderizado si hay LaTeX */}
+            {localText.includes('$') && (
+              <div className="mt-1 px-3 py-2 bg-blue-50 rounded-md border border-blue-100">
+                <span className="text-xs text-blue-500 block mb-1">Vista previa:</span>
+                <RichMathText text={localText} className="text-gray-900" />
+              </div>
+            )}
           </div>
 
           {/* Campos específicos por tipo */}
@@ -318,31 +325,39 @@ export default function QuestionEditor({
                   {localOptions.map((option, optionIndex) => {
                     const letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][optionIndex] || String(optionIndex + 1);
                     return (
-                      <div key={optionIndex} className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name={`question-${question.id}`}
-                          checked={localCorrectAnswer === letter}
-                          onChange={() => handleCorrectAnswerChange(letter)}
-                          className="w-4 h-4 text-primary focus:ring-primary flex-shrink-0"
-                        />
-                        <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
-                          {letter}
-                        </span>
-                        <input
-                          type="text"
-                          value={option}
-                          onChange={(e) => handleOptionChange(optionIndex, e.target.value)}
-                          placeholder={`Opción ${letter}`}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeOption(optionIndex)}
-                          className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-md"
-                        >
-                          ✕
-                        </button>
+                      <div key={optionIndex}>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`question-${question.id}`}
+                            checked={localCorrectAnswer === letter}
+                            onChange={() => handleCorrectAnswerChange(letter)}
+                            className="w-4 h-4 text-primary focus:ring-primary flex-shrink-0"
+                          />
+                          <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
+                            {letter}
+                          </span>
+                          <input
+                            type="text"
+                            value={option}
+                            onChange={(e) => handleOptionChange(optionIndex, e.target.value)}
+                            placeholder={`Opción ${letter}`}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeOption(optionIndex)}
+                            className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-md"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {/* Preview si la opción tiene LaTeX */}
+                        {option.includes('$') && (
+                          <div className="ml-14 mt-0.5 text-sm text-gray-700">
+                            <RichMathText text={option.replace(/^[A-Z]\)\s*/, '')} />
+                          </div>
+                        )}
                       </div>
                     );
                   })}

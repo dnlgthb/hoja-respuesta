@@ -189,10 +189,13 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
           })
           .join('');
 
-        setRenderedHtml(html);
+        if (!cancelled) {
+          console.log('[RichMathText] Rendered:', text.substring(0, 60), '→ html length:', html.length);
+          setRenderedHtml(html);
+        }
       })
-      .catch(() => {
-        // MathLive failed — renderedHtml stays null, fallback shown
+      .catch((err) => {
+        console.error('[RichMathText] MathLive error:', err);
       });
 
     return () => { cancelled = true; };

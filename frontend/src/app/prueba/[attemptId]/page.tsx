@@ -8,6 +8,7 @@ import {
   Save, Loader2, AlertCircle, Send, X, Timer, Clock, Mail
 } from 'lucide-react';
 import MathField from '@/components/MathField';
+import RichMathText from '@/components/RichMathText';
 
 // ============================================
 // CONSTANTES
@@ -730,7 +731,9 @@ function QuestionCard({ question, value, onChange, justification, onJustificatio
               {question.points} {question.points === 1 ? 'punto' : 'puntos'}
             </span>
           </div>
-          <p className="text-gray-700">{question.questionText}</p>
+          <div className="text-gray-700">
+            <RichMathText text={question.questionText} />
+          </div>
         </div>
       </div>
 
@@ -892,7 +895,9 @@ function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleCho
             >
               {letter}
             </span>
-            <span className="pt-0.5">{option.replace(/^[A-Z]\)\s*/, '')}</span>
+            <span className="pt-0.5">
+              <RichMathText text={option.replace(/^[A-Z]\)\s*/, '')} />
+            </span>
           </button>
         );
       })}

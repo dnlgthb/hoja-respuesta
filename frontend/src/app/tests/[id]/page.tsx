@@ -10,6 +10,7 @@ import { Test, Question, Course, RubricSuggestion } from '@/types';
 import { ArrowLeft, Save, Play, CheckCircle, Users, AlertCircle, Clock, X, Settings, Plus, FileUp, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { QuestionType } from '@/types';
 import { ROUTES } from '@/config/constants';
+import RichMathText from '@/components/RichMathText';
 
 export default function TestDetailPage() {
   const router = useRouter();
@@ -1091,8 +1092,10 @@ export default function TestDetailPage() {
                             {questionType}
                           </span>
                           <span className="text-sm text-gray-500 truncate flex-1">
-                            {(question.questionText || question.question_text || '').substring(0, 80)}
-                            {(question.questionText || question.question_text || '').length > 80 ? '...' : ''}
+                            <RichMathText text={
+                              (question.questionText || question.question_text || '').substring(0, 80) +
+                              ((question.questionText || question.question_text || '').length > 80 ? '...' : '')
+                            } />
                           </span>
                         </div>
 

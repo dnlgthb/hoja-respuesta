@@ -24,6 +24,7 @@ import {
   FileText,
 } from 'lucide-react';
 import MathDisplay from '@/components/MathDisplay';
+import RichMathText from '@/components/RichMathText';
 
 // ============================================
 // TIPOS
@@ -744,9 +745,9 @@ export default function ResultsPage() {
                               )}
                             </div>
 
-                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                              {answer.questionText}
-                            </p>
+                            <div className="text-sm text-gray-600 mb-3 line-clamp-2">
+                              <RichMathText text={answer.questionText} />
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
@@ -776,7 +777,7 @@ export default function ResultsPage() {
                                 <p className="text-gray-500 mb-1">Respuesta correcta:</p>
                                 {answer.correctAnswer ? (
                                   <p className="text-gray-900 bg-gray-50 p-2 rounded">
-                                    {answer.correctAnswer}
+                                    <RichMathText text={answer.correctAnswer} />
                                   </p>
                                 ) : answer.correctionCriteria ? (
                                   <button
@@ -956,9 +957,9 @@ export default function ResultsPage() {
               </div>
               <div className="p-4 overflow-y-auto flex-1">
                 <div className="prose prose-sm max-w-none">
-                  <pre className="whitespace-pre-wrap text-gray-700 bg-gray-50 p-4 rounded-lg text-sm font-normal">
-                    {showCriteriaModal.criteria}
-                  </pre>
+                  <div className="whitespace-pre-wrap text-gray-700 bg-gray-50 p-4 rounded-lg text-sm font-normal">
+                    <RichMathText text={showCriteriaModal.criteria} />
+                  </div>
                 </div>
               </div>
               <div className="p-4 border-t border-gray-200">

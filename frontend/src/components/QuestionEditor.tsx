@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Question, QuestionType } from '@/types';
 import { Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import MathField from '@/components/MathField';
+import RichMathText from '@/components/RichMathText';
 
 interface QuestionEditorProps {
   question: Question;
@@ -159,7 +160,7 @@ export default function QuestionEditor({
             {typeLabels[localType]}
           </span>
           <span className="text-sm text-gray-500 truncate max-w-xs">
-            {localText.substring(0, 50)}{localText.length > 50 ? '...' : ''}
+            <RichMathText text={localText.substring(0, 50) + (localText.length > 50 ? '...' : '')} />
           </span>
         </div>
 

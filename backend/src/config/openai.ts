@@ -47,7 +47,9 @@ REGLAS PARA PREGUNTAS ANIDADAS/COMPUESTAS:
 REGLAS PARA PREGUNTAS DE OPCIÓN MÚLTIPLE:
 - Las opciones deben incluir la letra (A, B, C, D) y el contenido completo.
 - Si una opción contiene una expresión matemática, transcríbela en LaTeX.
-- Si una opción es una imagen o gráfico, descríbelo.
+- Si una opción es una imagen o gráfico que puedes interpretar, describe su contenido (ej: "A) Gráfico de parábola con vértice en (2,3)").
+- Si una opción es una imagen o gráfico que NO puedes interpretar, escribe "A) [Ver imagen en el PDF]". NUNCA escribas solo la letra repetida como "A) A)" o "B) B)".
+- Si TODAS las opciones son imágenes que no puedes leer, marca has_image: true e indica en image_description que las opciones son gráficas.
 
 REGLA MÁS IMPORTANTE - TEXTO DE LA PREGUNTA:
 El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.

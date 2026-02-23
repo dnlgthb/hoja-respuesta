@@ -9,79 +9,83 @@ const openai = new OpenAI({
   timeout: 120_000, // 2 minutos por llamada
 });
 
-// Prompt del sistema para extracción de preguntas (compartido entre llamadas)
-const ANALYZE_SYSTEM_PROMPT = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas (PAES, SIMCE, etc.).
+// =============================================
+// PHASE 1: OCR - Faithful visual transcription
+// =============================================
+const OCR_SYSTEM_PROMPT = `Eres un sistema de OCR especializado en documentos educativos con notación matemática.
+
+TU ÚNICA TAREA: Transcribir EXACTAMENTE lo que ves en cada página del PDF. NO interpretes, NO simplifiques, NO reestructures.
+
+REGLAS DE TRANSCRIPCIÓN:
+1. Transcribe CADA página separándolas con "--- PÁGINA X ---"
+2. Copia el texto LITERALMENTE, carácter por carácter
+3. Para expresiones matemáticas, usa LaTeX entre $...$
+4. Mantén la estructura visual: números de pregunta, opciones (A, B, C, D), etc.
+
+REGLAS CRÍTICAS PARA NOTACIÓN MATEMÁTICA:
+- SUPERÍNDICES/EXPONENTES: Un número o expresión pequeño ARRIBA de otro es un EXPONENTE.
+  - Si ves "14" con un "2" pequeño arriba → $14^{2}$ (catorce al cuadrado)
+  - Si ves "2" con un "6" pequeño arriba → $2^{6}$ (dos a la sexta)
+  - Si ves "10" con un "2" pequeño arriba → $10^{2}$ (diez al cuadrado)
+  - Si ves "(888)" con un "2" pequeño arriba → $(888)^{2}$ (888 al cuadrado)
+  - NUNCA confundas un exponente con multiplicación: "2⁶" es $2^{6}$, NO $2 \\times 6$ ni $26$
+
+- EXPONENTES FRACCIONARIOS: Si el exponente es una fracción pequeña arriba del número:
+  - "2" con "9/2" arriba → $2^{\\frac{9}{2}}$ (dos elevado a nueve medios)
+  - "2" con "-1/6" arriba → $2^{-\\frac{1}{6}}$ (dos elevado a menos un sexto)
+  - NUNCA escribas el exponente fraccionario como una fracción independiente
+
+- SUBÍNDICES: Un número o letra pequeño ABAJO es un subíndice.
+  - "D" con "AB" abajo → $D_{AB}$
+  - "x" con "1" abajo → $x_{1}$
+
+- RAÍCES: El símbolo √ con una barra horizontal encima de la expresión es una RAÍZ CUADRADA.
+  - √2 → $\\sqrt{2}$
+  - √(2⁶) → $\\sqrt{2^{6}}$ (raíz cuadrada de 2 a la 6)
+  - NUNCA confundas √ con una fracción
+
+- FRACCIONES: Una barra horizontal con expresiones arriba y abajo es una fracción.
+  - Numerador arriba, denominador abajo → $\\frac{numerador}{denominador}$
+
+- PRODUCTO/MULTIPLICACIÓN: Un punto centrado (·) entre expresiones es multiplicación.
+  - 2⁶ · 111² → $2^{6} \\cdot 111^{2}$
+
+- GRADOS: El símbolo ° después de un número → $135^{\\circ}$
+- PI: El símbolo π → $\\pi$
+
+FORMATO DE SALIDA - Texto plano con la transcripción fiel de cada página.
+Si una página es portada, instrucciones o está en blanco, escribe "[Página de instrucciones/portada/blanco]".
+Si hay una imagen, tabla o gráfico, descríbelo entre corchetes: [Imagen: descripción]
+Si las opciones de una pregunta son imágenes/gráficos, descríbelas: "A) [Gráfico: descripción]"`;
+
+// =============================================
+// PHASE 2: Structuring - Parse OCR into JSON
+// =============================================
+const STRUCTURE_SYSTEM_PROMPT = `Eres un asistente que estructura texto transcrito de pruebas educativas en formato JSON.
+
+Recibirás la transcripción fiel (OCR) de una prueba. Tu trabajo es ESTRUCTURAR ese texto en JSON, sin modificar las expresiones matemáticas.
 
 INSTRUCCIONES:
-1. Analiza el documento PDF y extrae TODAS las preguntas que encuentres.
-2. Ignora las páginas de instrucciones, portada y páginas en blanco.
-3. Para cada pregunta identifica:
-   - Número de pregunta (puede ser "1", "1.a", "I", "I.a", etc.)
-   - Tipo: TRUE_FALSE, MULTIPLE_CHOICE, DEVELOPMENT, o MATH
-   - Texto completo del enunciado
-   - Opciones (si aplica)
-   - Respuesta correcta (si es posible deducirla)
+1. Identifica cada pregunta por su número
+2. Clasifica el tipo: TRUE_FALSE, MULTIPLE_CHOICE, DEVELOPMENT, o MATH
+3. Extrae el texto completo, opciones y contexto
+4. Las expresiones matemáticas ya vienen en LaTeX con $...$  — cópialas TAL CUAL
 
-REGLA FUNDAMENTAL - TRANSCRIPCIÓN FIEL:
-Tu trabajo es TRANSCRIBIR exactamente lo que aparece en el PDF, NO interpretar, simplificar ni reestructurar las expresiones matemáticas.
-- NUNCA simplifiques expresiones: si el PDF dice $\\sqrt{2} \\cdot \\sqrt{2^{6}}$, escribe exactamente eso, NO $\\sqrt{2} \\cdot \\sqrt{6}$.
-- NUNCA conviertas una expresión a otra forma equivalente. Copia lo que ves.
-- Si ves un símbolo de raíz cuadrada (√), SIEMPRE usa \\sqrt{}. NUNCA lo confundas con una fracción.
-- Si ves un exponente que es una fracción (como $2^{\\frac{1}{6}}$), escríbelo como exponente fraccionario, NO como una fracción simple ($\\frac{1}{6}$).
+REGLAS:
+- NUNCA modifiques las expresiones matemáticas de la transcripción
+- Si la transcripción dice $14^{2} + \\frac{1}{5^{-2}}$, copia EXACTAMENTE eso
+- Si la transcripción dice $(888)^{2}$, copia EXACTAMENTE eso
+- Opciones: incluye la letra y contenido completo. Ej: "A) $2^{6} \\cdot 111^{2}$"
+- Si una opción dice "[Ver imagen en el PDF]" o similar, mantenlo
 
-ERRORES COMUNES QUE DEBES EVITAR:
-1. RAÍCES vs FRACCIONES: El símbolo √ (raíz cuadrada) NO es una fracción. Si ves √2, escribe $\\sqrt{2}$, NUNCA $\\frac{1}{2}$.
-   - $h\\sqrt{2}$ (h por raíz de 2) ≠ $h\\frac{1}{2}$ (h medios)
-   - $2\\sqrt{h}$ (2 por raíz de h) ≠ $\\frac{2}{h}$
-   - $2\\sqrt{5}$ (2 por raíz de 5) ≠ $\\frac{2}{5}$
-2. EXPONENTES FRACCIONARIOS: $2^{\\frac{9}{2}}$ (2 elevado a nueve medios) ≠ $\\frac{2}{9}$ ni $\\frac{9}{2}$.
-   - El exponente pequeño arriba del número es un EXPONENTE, no una fracción independiente.
-   - Ejemplo: si ves 2 con un ⁹⁄₂ pequeño arriba, es $2^{\\frac{9}{2}}$, NO $\\frac{2}{9}$.
-3. RAÍCES DENTRO DE PARÉNTESIS: $(\\sqrt{5} + 1)(\\sqrt{5} - 1)$ ≠ $(5 + 1)(5 - 1)$. NO omitas el \\sqrt.
-4. RAÍCES CON EXPONENTES DENTRO: $\\sqrt{2^{6}}$ (raíz de 2 a la 6) ≠ $\\sqrt{6}$. El exponente está DENTRO de la raíz.
-5. GRADOS: 135° se escribe $135°$ o $135^{\\circ}$, NO $135^{\\text{^{\\circ}}}$.
-6. PI: el símbolo π se escribe $\\pi$, NO $\\text{\\pi}$.
+PREGUNTAS CON IMÁGENES:
+- Si la transcripción indica [Imagen: ...], pon has_image: true y la descripción en image_description
+- Si las opciones son imágenes descritas, inclúyelas como texto descriptivo
 
-REGLAS PARA EXPRESIONES MATEMÁTICAS:
-- SIEMPRE envuelve expresiones matemáticas en delimitadores $...$
-- Ejemplo: "Calcula $\\frac{3}{4} + \\frac{2}{8}$"
-- NUNCA escribas comandos LaTeX sin delimitadores $
-- Fracciones: $\\frac{numerador}{denominador}$
-- Raíces: $\\sqrt{x}$, $\\sqrt[3]{x}$, $\\sqrt{x^{2} + y^{2}}$
-- Exponentes: $x^{2}$, $x^{n}$, $2^{\\frac{1}{6}}$
-- Subíndices: $x_{1}$, $D_{AB}$
-- Símbolos: $\\pi$, $\\geq$, $\\leq$, $\\neq$, $\\sim$, $\\vec{v}$, $\\cdot$, $\\times$
-- Intervalos: $[p, q]$, $]p, q[$
-- Grados: $90^{\\circ}$, $135^{\\circ}$
+PREGUNTAS ANIDADAS/COMPUESTAS:
+- Si hay un enunciado general para varias sub-preguntas, ponlo en "context" de cada sub-pregunta
 
-VERIFICACIÓN DE COHERENCIA:
-Después de extraer cada pregunta, verifica:
-- ¿Las opciones son coherentes con la pregunta? Si la pregunta involucra raíces cuadradas, las opciones probablemente también las tienen.
-- ¿Los números de las opciones tienen sentido matemático? Si una opción parece una fracción simple pero la pregunta usa exponentes, probablemente es un exponente fraccionario.
-- Si la pregunta pregunta por el valor de una expresión con √, las opciones probablemente contienen √ o exponentes, no fracciones simples pequeñas.
-
-REGLAS PARA PREGUNTAS CON IMÁGENES/FIGURAS:
-- Si una pregunta incluye una figura, diagrama, tabla o imagen, indícalo en el campo "has_image": true
-- En el campo "image_description" describe brevemente qué muestra la imagen (ej: "Gráfico de parábola con vértice en (1, 40)")
-- En el campo "image_page" indica el número de página donde está la imagen
-
-REGLAS PARA PREGUNTAS ANIDADAS/COMPUESTAS:
-- Si hay un enunciado general que aplica a varias sub-preguntas (ej: "Lee el siguiente texto y responde las preguntas 5 a 8"), incluye ese contexto en el campo "context" de CADA sub-pregunta.
-- No omitas el enunciado padre. Cada sub-pregunta debe ser comprensible por sí sola con su campo "context".
-
-REGLAS PARA PREGUNTAS DE OPCIÓN MÚLTIPLE:
-- Las opciones deben incluir la letra (A, B, C, D) y el contenido completo.
-- Si una opción contiene una expresión matemática, transcríbela en LaTeX con delimitadores $...$. Ejemplo: "A) $\\frac{1}{2}$"
-- Si una opción es una imagen o gráfico que puedes interpretar, describe su contenido (ej: "A) Gráfico de parábola con vértice en (2,3)").
-- Si una opción es una imagen o gráfico que NO puedes interpretar, escribe "A) [Ver imagen en el PDF]". NUNCA escribas solo la letra repetida como "A) A)" o "B) B)".
-- Si TODAS las opciones son imágenes que no puedes leer, marca has_image: true e indica en image_description que las opciones son gráficas.
-
-REGLA IMPORTANTE - TEXTO DE LA PREGUNTA:
-El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.
-EJEMPLO CORRECTO: "Calcula y simplifica: $\\frac{3}{4} + \\frac{2}{8}$"
-EJEMPLO INCORRECTO: "\\frac{3}{4} + \\frac{2}{8}" (falta la instrucción y los delimitadores $)
-
-Responde ÚNICAMENTE con un JSON válido con esta estructura:
+Responde ÚNICAMENTE con JSON válido:
 {
   "questions": [
     {
@@ -100,9 +104,10 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
 }
 
 IMPORTANTE:
-- El campo "text" DEBE incluir la INSTRUCCIÓN completa
-- El campo "number" es STRING (permite "I.a", "2.b", etc.)
-- Si hay puntaje indicado, úsalo; si no, usa 1 punto`;
+- "text" DEBE incluir la instrucción completa, no solo la fórmula
+- "number" es STRING (permite "I.a", "2.b", etc.)
+- Si hay puntaje indicado, úsalo; si no, usa 1 punto
+- Si no hay preguntas en la transcripción, retorna {"questions": []}`;
 
 // Tipo para callback de progreso
 export type ProgressCallback = (data: {
@@ -115,30 +120,29 @@ export type ProgressCallback = (data: {
 }) => void;
 
 /**
- * Analizar un chunk de PDF con vision API
- * @param chunkBase64 - Chunk del PDF en base64
- * @param chunkInfo - Información sobre qué páginas contiene
- * @returns Array de preguntas extraídas del chunk
+ * PHASE 1: OCR - Send PDF chunk to vision model for faithful transcription.
+ * Returns raw text transcription, NOT structured JSON.
  */
-async function analyzeDocumentChunk(
+async function ocrPdfChunk(
   chunkBase64: string,
   chunkInfo: string
-): Promise<any[]> {
+): Promise<string> {
   const startTime = Date.now();
-  console.log(`  🔍 Usando modelo de visión: ${env.OPENAI_VISION_MODEL}`);
+  console.log(`  👁️ Phase 1 (OCR): ${chunkInfo} — modelo: ${env.OPENAI_VISION_MODEL}`);
+
   const completion = await openai.chat.completions.create({
     model: env.OPENAI_VISION_MODEL,
     messages: [
       {
         role: 'system',
-        content: ANALYZE_SYSTEM_PROMPT,
+        content: OCR_SYSTEM_PROMPT,
       },
       {
         role: 'user',
         content: [
           {
             type: 'text',
-            text: `Analiza este fragmento de una prueba educativa (${chunkInfo}) y extrae todas las preguntas que encuentres. Si no hay preguntas en estas páginas (ej: portada, instrucciones), retorna un JSON con "questions": [].`,
+            text: `Transcribe FIELMENTE todo el contenido de este fragmento de prueba educativa (${chunkInfo}). Copia exactamente lo que ves, especialmente la notación matemática con exponentes, raíces y fracciones. Usa LaTeX entre $...$ para las expresiones matemáticas.`,
           },
           {
             type: 'file',
@@ -150,7 +154,42 @@ async function analyzeDocumentChunk(
         ],
       },
     ],
-    temperature: 0.1,
+    temperature: 0.0,
+    max_tokens: 16000,
+  });
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const transcription = completion.choices[0].message.content || '';
+  const lines = transcription.split('\n').filter(l => l.trim()).length;
+
+  console.log(`  📄 Phase 1 done: ${lines} lines transcribed (${elapsed}s)`);
+  return transcription;
+}
+
+/**
+ * PHASE 2: Structure - Send OCR transcription to text model to parse into JSON.
+ * No vision needed here, just text comprehension.
+ */
+async function structureTranscription(
+  transcription: string,
+  chunkInfo: string
+): Promise<any[]> {
+  const startTime = Date.now();
+  console.log(`  🏗️ Phase 2 (Structure): parsing transcription into JSON...`);
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_VISION_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: STRUCTURE_SYSTEM_PROMPT,
+      },
+      {
+        role: 'user',
+        content: `Aquí está la transcripción fiel (OCR) de un fragmento de prueba educativa (${chunkInfo}). Estructura las preguntas en formato JSON. COPIA las expresiones matemáticas EXACTAMENTE como están en la transcripción, sin modificar nada.\n\nTRANSCRIPCIÓN:\n${transcription}`,
+      },
+    ],
+    temperature: 0.0,
     max_tokens: 16000,
     response_format: { type: 'json_object' },
   });
@@ -159,7 +198,6 @@ async function analyzeDocumentChunk(
   const responseText = completion.choices[0].message.content || '{}';
 
   // Fix LaTeX backslashes BEFORE JSON.parse to prevent escape destruction
-  // e.g., \frac → form-feed+rac, \times → tab+imes
   const fixedJson = fixLatexInJsonString(responseText);
   if (fixedJson !== responseText) {
     console.log(`  🔧 Fixed LaTeX escapes in JSON response`);
@@ -168,10 +206,34 @@ async function analyzeDocumentChunk(
   const parsed = JSON.parse(fixedJson);
   const rawQuestions = parsed.questions || [];
 
-  console.log(`  📝 ${rawQuestions.length} questions extracted (${elapsed}s)`);
+  console.log(`  📝 Phase 2 done: ${rawQuestions.length} questions structured (${elapsed}s)`);
 
   // Post-process: convert Unicode math to LaTeX, fix bare commands, repair broken escapes
   const questions = rawQuestions.map((q: any) => postProcessQuestion(q));
+
+  return questions;
+}
+
+/**
+ * Two-phase analysis of a PDF chunk:
+ * Phase 1 (OCR): Vision model transcribes the PDF faithfully as text
+ * Phase 2 (Structure): Text model parses the transcription into JSON
+ */
+async function analyzeDocumentChunk(
+  chunkBase64: string,
+  chunkInfo: string
+): Promise<any[]> {
+  // Phase 1: Faithful OCR transcription
+  const transcription = await ocrPdfChunk(chunkBase64, chunkInfo);
+
+  // Skip empty transcriptions (cover pages, instructions, etc.)
+  if (!transcription.trim() || transcription.includes('[Página de instrucciones') || transcription.includes('[Página en blanco')) {
+    console.log(`  ⏭️ Skipping chunk (no questions): ${chunkInfo}`);
+    return [];
+  }
+
+  // Phase 2: Structure into JSON
+  const questions = await structureTranscription(transcription, chunkInfo);
 
   return questions;
 }

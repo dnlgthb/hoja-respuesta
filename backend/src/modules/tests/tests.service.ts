@@ -363,7 +363,7 @@ export class TestsService {
     const test = await this.getTestById(testId, teacherId);
 
     // Dividir PDF en chunks para procesamiento eficiente
-    const chunks = await splitPdfIntoChunks(fileBuffer, 15);
+    const chunks = await splitPdfIntoChunks(fileBuffer, 5);
 
     if (!chunks || chunks.length === 0) {
       throw new Error('No se pudo procesar el PDF');

@@ -223,6 +223,42 @@ export function repairBrokenLatex(text: string): string {
   return result;
 }
 
+/**
+ * Fix AI-generated \text{} wrappers around LaTeX commands.
+ * GPT-4o sometimes outputs \text{\sqrt}X, \text{\pi}, \text{^{\circ}} etc.
+ * These need to be converted to proper LaTeX.
+ */
+function fixTextWrappedLatex(text: string): string {
+  // \text{\sqrt}X or \text{\sqrt{...}} → \sqrt{X} or \sqrt{...}
+  // Pattern: \text{\sqrt} followed by digits/letters (no braces) → wrap in braces
+  text = text.replace(/\\text\{\\sqrt\{([^}]*)\}\}/g, '\\sqrt{$1}');
+  text = text.replace(/\\text\{\\sqrt\}(\d+)/g, '\\sqrt{$1}');
+  text = text.replace(/\\text\{\\sqrt\}([a-zA-Z])/g, '\\sqrt{$1}');
+  // Bare \text{\sqrt} at end or before space
+  text = text.replace(/\\text\{\\sqrt\}/g, '\\sqrt');
+
+  // \text{\pi} → \pi
+  text = text.replace(/\\text\{\\pi\}/g, '\\pi');
+
+  // \text{\circ} → ^\circ  and  ^{\text{^{\circ}}} → ^{\circ}
+  text = text.replace(/\^\{\\text\{\^\{\\circ\}\}\}/g, '^{\\circ}');
+  text = text.replace(/\\text\{\\circ\}/g, '\\circ');
+
+  // \text{\alpha}, \text{\beta}, etc.
+  const greekLetters = ['alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'sigma', 'omega', 'mu', 'epsilon', 'phi', 'psi', 'rho', 'tau', 'nu'];
+  for (const letter of greekLetters) {
+    text = text.replace(new RegExp(`\\\\text\\{\\\\${letter}\\}`, 'g'), `\\${letter}`);
+  }
+
+  // \text{\times} → \times, \text{\cdot} → \cdot, etc.
+  const operators = ['times', 'cdot', 'div', 'pm', 'neq', 'geq', 'leq', 'infty', 'approx'];
+  for (const op of operators) {
+    text = text.replace(new RegExp(`\\\\text\\{\\\\${op}\\}`, 'g'), `\\${op}`);
+  }
+
+  return text;
+}
+
 // Unicode → LaTeX replacement map
 const UNICODE_TO_LATEX: [RegExp, string][] = [
   // Operators
@@ -439,6 +475,10 @@ export function postProcessMathText(text: string): string {
   // Step 0.5: Fix double-escaped percent signs (\\% → \%)
   // AI sometimes produces \\% which should be \% for proper LaTeX rendering
   text = text.replace(/\\\\%/g, '\\%');
+
+  // Step 0.6: Fix AI-generated \text{} wrappers around LaTeX commands
+  // GPT-4o sometimes wraps LaTeX commands in \text{}, e.g. \text{\sqrt}X → \sqrt{X}
+  text = fixTextWrappedLatex(text);
 
   // Step 1: Fix bare LaTeX commands (without $ delimiters)
   // If there's LaTeX but no $, the AI forgot the delimiters

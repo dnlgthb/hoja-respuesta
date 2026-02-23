@@ -6,8 +6,152 @@ import { postProcessQuestion, fixLatexInJsonString } from '../utils/mathPostProc
 // Crear cliente de OpenAI con timeout generoso para PDFs grandes
 const openai = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
-  timeout: 120_000, // 2 minutos por llamada
+  timeout: 180_000, // 3 minutos por llamada
 });
+
+// =============================================
+// MATHPIX OCR - Specialized math OCR service
+// =============================================
+const MATHPIX_API_URL = 'https://api.mathpix.com/v3/pdf';
+
+function getMathpixHeaders(): Record<string, string> {
+  return {
+    'app_id': env.MATHPIX_APP_ID,
+    'app_key': env.MATHPIX_APP_KEY,
+  };
+}
+
+/**
+ * Send a full PDF to Mathpix for OCR and return the transcribed text.
+ * Mathpix is specialized in math OCR — exponentes, fracciones, raíces.
+ * Flow: POST PDF → poll status → download .mmd (Mathpix Markdown)
+ */
+async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<string> {
+  const startTime = Date.now();
+  console.log(`  🔢 Mathpix OCR: sending PDF (${(pdfBuffer.length / 1024 / 1024).toFixed(1)}MB)...`);
+
+  // Step 1: Upload PDF
+  const formData = new FormData();
+  formData.append('file', new Blob([pdfBuffer], { type: 'application/pdf' }), 'prueba.pdf');
+  formData.append('options_json', JSON.stringify({
+    math_inline_delimiters: ['$', '$'],
+    math_display_delimiters: ['$$', '$$'],
+    rm_spaces: true,
+  }));
+
+  const uploadResponse = await fetch(MATHPIX_API_URL, {
+    method: 'POST',
+    headers: getMathpixHeaders(),
+    body: formData,
+  });
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Mathpix upload failed (${uploadResponse.status}): ${errorText}`);
+  }
+
+  const { pdf_id } = await uploadResponse.json() as { pdf_id: string };
+  console.log(`  🔢 Mathpix: uploaded, pdf_id=${pdf_id}`);
+
+  // Step 2: Poll for completion (max 5 minutes)
+  const maxWait = 300_000;
+  const pollInterval = 3_000;
+  let elapsed = 0;
+
+  while (elapsed < maxWait) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    elapsed += pollInterval;
+
+    const statusResponse = await fetch(`${MATHPIX_API_URL}/${pdf_id}`, {
+      headers: getMathpixHeaders(),
+    });
+
+    if (!statusResponse.ok) {
+      const errorText = await statusResponse.text();
+      throw new Error(`Mathpix status check failed (${statusResponse.status}): ${errorText}`);
+    }
+
+    const status = await statusResponse.json() as {
+      status: string;
+      percent_done: number;
+      num_pages: number;
+      num_pages_completed: number;
+    };
+
+    if (status.status === 'completed') {
+      console.log(`  🔢 Mathpix: completed ${status.num_pages} pages in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      break;
+    }
+
+    if (status.status === 'error') {
+      throw new Error(`Mathpix processing failed for pdf_id=${pdf_id}`);
+    }
+
+    // Log progress every ~15s
+    if (elapsed % 15000 < pollInterval) {
+      console.log(`  🔢 Mathpix: ${status.percent_done}% (${status.num_pages_completed}/${status.num_pages} pages)...`);
+    }
+  }
+
+  if (elapsed >= maxWait) {
+    throw new Error(`Mathpix timeout after ${maxWait / 1000}s for pdf_id=${pdf_id}`);
+  }
+
+  // Step 3: Download .mmd result
+  const mmdResponse = await fetch(`${MATHPIX_API_URL}/${pdf_id}.mmd`, {
+    headers: getMathpixHeaders(),
+  });
+
+  if (!mmdResponse.ok) {
+    const errorText = await mmdResponse.text();
+    throw new Error(`Mathpix download failed (${mmdResponse.status}): ${errorText}`);
+  }
+
+  const mmdText = await mmdResponse.text();
+  const lines = mmdText.split('\n').filter(l => l.trim()).length;
+  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`  📄 Mathpix OCR done: ${lines} lines, ${(mmdText.length / 1024).toFixed(1)}KB (${totalElapsed}s)`);
+
+  return mmdText;
+}
+
+/**
+ * Split Mathpix Markdown text into chunks for Phase 2 structuring.
+ * Splits by approximate line count, trying to break at question boundaries.
+ */
+function splitMathpixTextIntoChunks(text: string, linesPerChunk: number = 120): string[] {
+  const lines = text.split('\n');
+  if (lines.length <= linesPerChunk) return [text];
+
+  const chunks: string[] = [];
+  let currentChunk: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    currentChunk.push(lines[i]);
+
+    if (currentChunk.length >= linesPerChunk) {
+      // Try to break at a question boundary (line starting with number + period)
+      let breakIdx = currentChunk.length - 1;
+      for (let j = currentChunk.length - 1; j >= currentChunk.length - 20 && j >= 0; j--) {
+        if (/^\d+\.\s/.test(currentChunk[j])) {
+          breakIdx = j;
+          break;
+        }
+      }
+
+      // Push everything before the break point
+      chunks.push(currentChunk.slice(0, breakIdx).join('\n'));
+      // Start new chunk with the question that was at the break point
+      currentChunk = currentChunk.slice(breakIdx);
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk.join('\n'));
+  }
+
+  return chunks;
+}
 
 // =============================================
 // PHASE 1: OCR - Faithful visual transcription
@@ -227,10 +371,10 @@ async function structureTranscription(
   chunkInfo: string
 ): Promise<any[]> {
   const startTime = Date.now();
-  console.log(`  🏗️ Phase 2 (Structure): parsing transcription into JSON...`);
+  console.log(`  🏗️ Phase 2 (Structure): parsing transcription into JSON — modelo: ${env.OPENAI_MODEL}`);
 
   const completion = await openai.chat.completions.create({
-    model: env.OPENAI_VISION_MODEL,
+    model: env.OPENAI_MODEL,
     messages: [
       {
         role: 'system',
@@ -321,31 +465,106 @@ export async function analyzeDocument(
     return questions;
   }
 
-  // Múltiples chunks → procesar secuencialmente para no saturar la API
-  console.log(`📄 PDF grande: ${chunks[0].totalPages} páginas → ${chunks.length} batches`);
+  // Múltiples chunks → procesar en paralelo de a CONCURRENCY chunks
+  const CONCURRENCY = 2;
+  console.log(`📄 PDF grande: ${chunks[0].totalPages} páginas → ${chunks.length} batches (concurrencia: ${CONCURRENCY})`);
   const allQuestions: any[] = [];
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
-    const pagesStr = `${chunk.startPage}-${chunk.endPage}`;
-    console.log(`  🔄 Batch ${i + 1}/${chunks.length}: ${chunkInfo}...`);
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY);
+    const batchPromises = batch.map((chunk, j) => {
+      const idx = i + j;
+      const chunkInfo = `páginas ${chunk.startPage}-${chunk.endPage} de ${chunk.totalPages}`;
+      console.log(`  🔄 Batch ${idx + 1}/${chunks.length}: ${chunkInfo}...`);
+      return analyzeDocumentChunk(chunk.base64, chunkInfo).then(questions => {
+        console.log(`  ✅ Batch ${idx + 1}: ${questions.length} preguntas encontradas`);
+        return { idx, questions };
+      });
+    });
 
+    // Report progress for this parallel group
+    const pagesStr = batch.map(c => `${c.startPage}-${c.endPage}`).join(', ');
     onProgress?.({
       type: 'progress',
-      batch: i + 1,
+      batch: Math.min(i + CONCURRENCY, chunks.length),
       totalBatches: chunks.length,
       pages: pagesStr,
       questionsFound: allQuestions.length,
-      message: `Procesando batch ${i + 1} de ${chunks.length} (págs. ${pagesStr})...`,
+      message: `Procesando batches ${i + 1}-${Math.min(i + CONCURRENCY, chunks.length)} de ${chunks.length} (págs. ${pagesStr})...`,
     });
 
-    const questions = await analyzeDocumentChunk(chunk.base64, chunkInfo);
-    console.log(`  ✅ Batch ${i + 1}: ${questions.length} preguntas encontradas`);
-    allQuestions.push(...questions);
+    const results = await Promise.all(batchPromises);
+    // Sort by original index to maintain page order
+    results.sort((a, b) => a.idx - b.idx);
+    for (const r of results) {
+      allQuestions.push(...r.questions);
+    }
   }
 
   console.log(`📄 Total: ${allQuestions.length} preguntas extraídas de ${chunks.length} batches`);
+  return allQuestions;
+}
+
+/**
+ * Analyze a PDF using Mathpix for OCR (Phase 1) + gpt-4o-mini for structuring (Phase 2).
+ * Mathpix is specialized in math OCR — produces perfect LaTeX for exponents, fractions, roots.
+ * @param pdfBuffer - Full PDF as Buffer
+ * @param onProgress - Optional callback for progress updates
+ * @returns Array of structured questions
+ */
+export async function analyzeDocumentMathpix(
+  pdfBuffer: Buffer,
+  onProgress?: ProgressCallback
+) {
+  // Phase 1: Mathpix OCR — whole PDF at once
+  onProgress?.({
+    type: 'progress',
+    batch: 1,
+    totalBatches: 3,
+    pages: 'all',
+    questionsFound: 0,
+    message: 'Enviando PDF a Mathpix OCR...',
+  });
+
+  const fullText = await ocrFullPdfMathpix(pdfBuffer);
+
+  // Split text into chunks for Phase 2
+  const textChunks = splitMathpixTextIntoChunks(fullText, 120);
+  console.log(`📄 Mathpix text split into ${textChunks.length} chunks for structuring`);
+
+  // Phase 2: Structure each text chunk with gpt-4o-mini
+  const CONCURRENCY = 2;
+  const allQuestions: any[] = [];
+
+  for (let i = 0; i < textChunks.length; i += CONCURRENCY) {
+    const batch = textChunks.slice(i, i + CONCURRENCY);
+    const batchPromises = batch.map((chunk, j) => {
+      const idx = i + j;
+      const chunkInfo = `texto chunk ${idx + 1} de ${textChunks.length}`;
+      console.log(`  🔄 Structure ${idx + 1}/${textChunks.length}...`);
+      return structureTranscription(chunk, chunkInfo).then(questions => {
+        console.log(`  ✅ Structure ${idx + 1}: ${questions.length} preguntas`);
+        return { idx, questions };
+      });
+    });
+
+    onProgress?.({
+      type: 'progress',
+      batch: Math.min(i + CONCURRENCY, textChunks.length) + 1,
+      totalBatches: textChunks.length + 1,
+      pages: `chunk ${i + 1}-${Math.min(i + CONCURRENCY, textChunks.length)}`,
+      questionsFound: allQuestions.length,
+      message: `Estructurando preguntas (chunk ${i + 1}-${Math.min(i + CONCURRENCY, textChunks.length)} de ${textChunks.length})...`,
+    });
+
+    const results = await Promise.all(batchPromises);
+    results.sort((a, b) => a.idx - b.idx);
+    for (const r of results) {
+      allQuestions.push(...r.questions);
+    }
+  }
+
+  console.log(`📄 Total: ${allQuestions.length} preguntas extraídas (Mathpix + ${textChunks.length} structure calls)`);
   return allQuestions;
 }
 

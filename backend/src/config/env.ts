@@ -26,6 +26,8 @@ export const env = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
   OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || 'gpt-4o',
+  MATHPIX_APP_ID: process.env.MATHPIX_APP_ID || '',
+  MATHPIX_APP_KEY: process.env.MATHPIX_APP_KEY || '',
   SUPABASE_URL: process.env.SUPABASE_URL!,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
   RESEND_API_KEY: process.env.RESEND_API_KEY!,

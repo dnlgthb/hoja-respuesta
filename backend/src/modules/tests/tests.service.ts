@@ -2,7 +2,8 @@
 import prisma from '../../config/database';
 import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
-import { analyzeDocument, analyzeRubric as analyzeRubricAI, ProgressCallback } from '../../config/openai';
+import { analyzeDocument, analyzeDocumentMathpix, analyzeRubric as analyzeRubricAI, ProgressCallback } from '../../config/openai';
+import { env } from '../../config/env';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
 import { splitPdfIntoChunks } from '../../utils/pdfExtractor';
 
@@ -362,15 +363,21 @@ export class TestsService {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
 
-    // Dividir PDF en chunks para procesamiento eficiente
-    const chunks = await splitPdfIntoChunks(fileBuffer, 5);
+    // Analyze PDF: use Mathpix if credentials available, otherwise fallback to GPT-4o vision
+    const useMathpix = !!(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
+    let questions: any[];
 
-    if (!chunks || chunks.length === 0) {
-      throw new Error('No se pudo procesar el PDF');
+    if (useMathpix) {
+      console.log('📄 Using Mathpix OCR for PDF analysis');
+      questions = await analyzeDocumentMathpix(fileBuffer, onProgress);
+    } else {
+      console.log('📄 Using GPT-4o Vision for PDF analysis (Mathpix not configured)');
+      const chunks = await splitPdfIntoChunks(fileBuffer, 5);
+      if (!chunks || chunks.length === 0) {
+        throw new Error('No se pudo procesar el PDF');
+      }
+      questions = await analyzeDocument(chunks, onProgress);
     }
-
-    // Analizar con OpenAI Vision (divide en batches si es necesario)
-    const questions = await analyzeDocument(chunks, onProgress);
 
     if (!questions || questions.length === 0) {
       throw new Error('No se pudieron detectar preguntas en el PDF');

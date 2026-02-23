@@ -401,7 +401,7 @@ export class TestsService {
           context: q.context || null,
           has_image: q.has_image || false,
           image_description: q.image_description || null,
-          image_page: q.image_page || null,
+          image_page: q.image_page != null ? parseInt(String(q.image_page), 10) || null : null,
         },
       });
       createdQuestions.push(created);

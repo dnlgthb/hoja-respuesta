@@ -227,33 +227,40 @@ export function repairBrokenLatex(text: string): string {
  * Fix AI-generated \text{} wrappers around LaTeX commands.
  * GPT-4o sometimes outputs \text{\sqrt}X, \text{\pi}, \text{^{\circ}} etc.
  * These need to be converted to proper LaTeX.
+ *
+ * NOTE: Due to fixLatexInJsonString double-escaping already-escaped backslashes,
+ * the actual string may contain \\text{\\sqrt} (double backslash) instead of
+ * \text{\sqrt} (single). We use \\{1,2} to match both cases.
  */
 function fixTextWrappedLatex(text: string): string {
+  // Helper: match 1 or 2 backslashes (handles both single and double-escaped)
+  const BS = '\\\\{1,2}'; // matches \ or \\
+
   // \text{\sqrt}X or \text{\sqrt{...}} → \sqrt{X} or \sqrt{...}
-  // Pattern: \text{\sqrt} followed by digits/letters (no braces) → wrap in braces
-  text = text.replace(/\\text\{\\sqrt\{([^}]*)\}\}/g, '\\sqrt{$1}');
-  text = text.replace(/\\text\{\\sqrt\}(\d+)/g, '\\sqrt{$1}');
-  text = text.replace(/\\text\{\\sqrt\}([a-zA-Z])/g, '\\sqrt{$1}');
+  text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\{([^}]*)\\}\\}`, 'g'), '\\sqrt{$1}');
+  text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}(\\d+)`, 'g'), '\\sqrt{$1}');
+  text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}([a-zA-Z])`, 'g'), '\\sqrt{$1}');
   // Bare \text{\sqrt} at end or before space
-  text = text.replace(/\\text\{\\sqrt\}/g, '\\sqrt');
+  text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}`, 'g'), '\\sqrt');
 
   // \text{\pi} → \pi
-  text = text.replace(/\\text\{\\pi\}/g, '\\pi');
+  text = text.replace(new RegExp(`${BS}text\\{${BS}pi\\}`, 'g'), '\\pi');
 
-  // \text{\circ} → ^\circ  and  ^{\text{^{\circ}}} → ^{\circ}
-  text = text.replace(/\^\{\\text\{\^\{\\circ\}\}\}/g, '^{\\circ}');
-  text = text.replace(/\\text\{\\circ\}/g, '\\circ');
+  // ^{\text{^{\circ}}} → ^{\circ}
+  text = text.replace(new RegExp(`\\^\\{${BS}text\\{\\^\\{${BS}circ\\}\\}\\}`, 'g'), '^{\\circ}');
+  // \text{\circ} → \circ
+  text = text.replace(new RegExp(`${BS}text\\{${BS}circ\\}`, 'g'), '\\circ');
 
   // \text{\alpha}, \text{\beta}, etc.
   const greekLetters = ['alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'sigma', 'omega', 'mu', 'epsilon', 'phi', 'psi', 'rho', 'tau', 'nu'];
   for (const letter of greekLetters) {
-    text = text.replace(new RegExp(`\\\\text\\{\\\\${letter}\\}`, 'g'), `\\${letter}`);
+    text = text.replace(new RegExp(`${BS}text\\{${BS}${letter}\\}`, 'g'), `\\${letter}`);
   }
 
   // \text{\times} → \times, \text{\cdot} → \cdot, etc.
   const operators = ['times', 'cdot', 'div', 'pm', 'neq', 'geq', 'leq', 'infty', 'approx'];
   for (const op of operators) {
-    text = text.replace(new RegExp(`\\\\text\\{\\\\${op}\\}`, 'g'), `\\${op}`);
+    text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
   }
 
   return text;

@@ -236,12 +236,33 @@ function fixTextWrappedLatex(text: string): string {
   // Helper: match 1 or 2 backslashes (handles both single and double-escaped)
   const BS = '\\\\{1,2}'; // matches \ or \\
 
-  // \text{\sqrt}X or \text{\sqrt{...}} → \sqrt{X} or \sqrt{...}
+  // --- SQRT patterns (Phase 2 mangles \sqrt in many ways) ---
+
+  // \text{\textsqrt{X}} → \sqrt{X}  (gpt-4o-mini invents \textsqrt)
+  text = text.replace(new RegExp(`${BS}text\\{${BS}textsqrt\\{([^}]*)\\}\\}`, 'g'), '\\sqrt{$1}');
+
+  // \text{sqrt{X}} → \sqrt{X}  (drops backslash, wraps in \text{})
+  text = text.replace(/\\{1,2}text\{sqrt\{([^}]*)\}\}/g, '\\sqrt{$1}');
+
+  // \text{sqrt}{X} → \sqrt{X}  (drops backslash, arg outside \text{})
+  text = text.replace(/\\{1,2}text\{sqrt\}\{([^}]*)\}/g, '\\sqrt{$1}');
+  text = text.replace(/\\{1,2}text\{sqrt\}(\d+)/g, '\\sqrt{$1}');
+  text = text.replace(/\\{1,2}text\{sqrt\}([a-zA-Z])/g, '\\sqrt{$1}');
+  // Bare \text{sqrt} at end
+  text = text.replace(/\\{1,2}text\{sqrt\}/g, '\\sqrt');
+
+  // \text{\sqrt{X}} → \sqrt{X}  (original pattern with backslash)
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\{([^}]*)\\}\\}`, 'g'), '\\sqrt{$1}');
+  // \text{\sqrt}X patterns
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}(\\d+)`, 'g'), '\\sqrt{$1}');
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}([a-zA-Z])`, 'g'), '\\sqrt{$1}');
-  // Bare \text{\sqrt} at end or before space
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}`, 'g'), '\\sqrt');
+
+  // --- Mathpix \mathrm{~X} artifacts (tilde = thin space in Mathpix output) ---
+  // \text{~X} → \mathrm{X}  (Phase 2 converts \mathrm to \text, keep tilde-free)
+  text = text.replace(/\\{1,2}text\{~([^}]*)\}/g, '\\mathrm{$1}');
+
+  // --- Standard \text{} wrapped LaTeX commands ---
 
   // \text{\pi} → \pi
   text = text.replace(new RegExp(`${BS}text\\{${BS}pi\\}`, 'g'), '\\pi');
@@ -261,6 +282,17 @@ function fixTextWrappedLatex(text: string): string {
   const operators = ['times', 'cdot', 'div', 'pm', 'neq', 'geq', 'leq', 'infty', 'approx'];
   for (const op of operators) {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
+  }
+
+  // --- Double backslash before LaTeX commands inside math: \\cmd → \cmd ---
+  // Phase 2 sometimes over-escapes: \\cdot, \\times, \\frac, etc.
+  const allCmds = ['frac', 'sqrt', 'cdot', 'times', 'div', 'pm', 'mp', 'neq', 'geq', 'leq',
+    'sim', 'approx', 'infty', 'pi', 'left', 'right', 'mathrm', 'mathbf', 'quad',
+    'text', 'vec', 'overline', 'hat', 'bar', 'log', 'ln', 'sin', 'cos', 'tan',
+    ...greekLetters];
+  for (const cmd of allCmds) {
+    // Match \\cmd but not \\\cmd (already triple-escaped or escaped backslash + cmd)
+    text = text.replace(new RegExp(`(?<!\\\\)\\\\\\\\(${cmd})\\b`, 'g'), `\\$1`);
   }
 
   return text;

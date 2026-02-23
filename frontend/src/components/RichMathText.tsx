@@ -73,6 +73,10 @@ function preprocessLatex(input: string): string {
   // Step 0: Repair control characters from JSON.parse escape destruction
   input = repairBrokenLatex(input);
 
+  // Step 0.5: Fix double-escaped percent signs (\\% → \%)
+  // AI sometimes produces \\% in JSON which after parsing becomes \\% instead of \%
+  input = input.replace(/\\\\%/g, '\\%');
+
   // If already has $ delimiters, return as-is
   if (input.includes('$')) return input;
 

@@ -436,6 +436,10 @@ export function postProcessMathText(text: string): string {
   // e.g., form-feed + "rac" → \frac, tab + "imes" → \times
   text = repairBrokenLatex(text);
 
+  // Step 0.5: Fix double-escaped percent signs (\\% → \%)
+  // AI sometimes produces \\% which should be \% for proper LaTeX rendering
+  text = text.replace(/\\\\%/g, '\\%');
+
   // Step 1: Fix bare LaTeX commands (without $ delimiters)
   // If there's LaTeX but no $, the AI forgot the delimiters
   if (LATEX_CMD_PATTERN.test(text) && !text.includes('$')) {

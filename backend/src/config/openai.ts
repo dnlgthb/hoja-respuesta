@@ -125,8 +125,9 @@ async function analyzeDocumentChunk(
   chunkInfo: string
 ): Promise<any[]> {
   const startTime = Date.now();
+  console.log(`  🔍 Usando modelo de visión: ${env.OPENAI_VISION_MODEL}`);
   const completion = await openai.chat.completions.create({
-    model: env.OPENAI_MODEL,
+    model: env.OPENAI_VISION_MODEL,
     messages: [
       {
         role: 'system',
@@ -745,7 +746,7 @@ async function analyzeRubricChunk(
   const userPrompt = buildRubricUserPrompt(questionsContext, chunkInfo);
 
   const completion = await openai.chat.completions.create({
-    model: env.OPENAI_MODEL,
+    model: env.OPENAI_VISION_MODEL,
     messages: [
       {
         role: 'system',

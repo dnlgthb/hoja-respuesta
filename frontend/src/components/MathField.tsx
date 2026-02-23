@@ -66,8 +66,11 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
         if (mathfield.shadowRoot) {
           const wrapStyle = document.createElement('style');
           wrapStyle.textContent = `
-            .ML__latex { white-space: normal !important; }
-            .ML__base { white-space: normal !important; display: inline !important; }
+            .ML__content { overflow: visible !important; }
+            .ML__fieldcontainer { overflow: visible !important; }
+            .ML__latex { white-space: normal !important; flex: 1 1 100% !important; min-width: 0 !important; }
+            .ML__base { white-space: normal !important; width: 100% !important; }
+            .ML__text { white-space: normal !important; }
           `;
           mathfield.shadowRoot.appendChild(wrapStyle);
         }

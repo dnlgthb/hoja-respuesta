@@ -258,9 +258,13 @@ function fixTextWrappedLatex(text: string): string {
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}([a-zA-Z])`, 'g'), '\\sqrt{$1}');
   text = text.replace(new RegExp(`${BS}text\\{${BS}sqrt\\}`, 'g'), '\\sqrt');
 
-  // --- Mathpix \mathrm{~X} artifacts (tilde = thin space in Mathpix output) ---
+  // --- Mathpix tilde artifacts (~  = thin space in Mathpix \mathrm{~X} output) ---
   // \text{~X} → \mathrm{X}  (Phase 2 converts \mathrm to \text, keep tilde-free)
   text = text.replace(/\\{1,2}text\{~([^}]*)\}/g, '\\mathrm{$1}');
+  // Clean stray tildes inside LaTeX args: \sqrt{~h} → \sqrt{h}, \mathrm{~h} → \mathrm{h}
+  text = text.replace(/(\\(?:sqrt|mathrm|mathbf|text)\{)~(\s*)/g, '$1$2');
+  // Also \mathrm{~ h} → \mathrm{h}
+  text = text.replace(/(\\(?:sqrt|mathrm|mathbf|text)\{)~\s+/g, '$1');
 
   // --- Standard \text{} wrapped LaTeX commands ---
 
@@ -283,6 +287,17 @@ function fixTextWrappedLatex(text: string): string {
   for (const op of operators) {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
   }
+
+  // --- Bare \% outside $...$ → just % (Mathpix uses \% for percent in text) ---
+  // Only replace \% that is NOT inside $...$; postProcessMathText handles segmentation,
+  // but \% in plain text should just be %
+  text = text.replace(/\\%/g, '%');
+
+  // --- \, (thin space) used instead of \cdot → \cdot (Phase 2 sometimes swaps these) ---
+  // Inside math: $2 \, \frac{1}{3} \, (8-6)$ should use \cdot not \,
+  // Replace \, when between math operands (number/brace/paren and frac/sqrt/number/letter/paren)
+  // Use lookahead (?=...) so the right operand isn't consumed — allows chained matches: 2 \, 3 \, 8
+  text = text.replace(/(\d|}|\))\s*\\,\s*(?=\\frac|\\sqrt|\d|[a-zA-Z(])/g, '$1 \\cdot ');
 
   // --- Double backslash before LaTeX commands inside math: \\cmd → \cmd ---
   // Phase 2 sometimes over-escapes: \\cdot, \\times, \\frac, etc.

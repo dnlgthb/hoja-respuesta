@@ -271,22 +271,58 @@ function fixTextWrappedLatex(text: string): string {
   // \text{\pi} → \pi
   text = text.replace(new RegExp(`${BS}text\\{${BS}pi\\}`, 'g'), '\\pi');
 
-  // ^{\text{^{\circ}}} → ^{\circ}
-  text = text.replace(new RegExp(`\\^\\{${BS}text\\{\\^\\{${BS}circ\\}\\}\\}`, 'g'), '^{\\circ}');
+  // ^{\text{^{\circ}X}} → ^{\circ}\mathrm{X}  (X = optional unit like C, F)
+  text = text.replace(new RegExp(`\\^\\{${BS}text\\{\\^\\{${BS}circ\\}([A-Za-z]*)\\}\\}`, 'g'),
+    (_, unit) => unit ? `^{\\circ}\\mathrm{${unit}}` : '^{\\circ}');
+  // ^{\text{°X}} → ^{\circ}\mathrm{X}  (Unicode ° before conversion)
+  text = text.replace(new RegExp(`\\^\\{${BS}text\\{°([A-Za-z]*)\\}\\}`, 'g'),
+    (_, unit) => unit ? `^{\\circ}\\mathrm{${unit}}` : '^{\\circ}');
+  // \text{°X} → ^{\circ}\mathrm{X}  (bare, not inside ^{})
+  text = text.replace(new RegExp(`${BS}text\\{°([A-Za-z]*)\\}`, 'g'),
+    (_, unit) => unit ? `^{\\circ}\\mathrm{${unit}}` : '^{\\circ}');
+  // \text{\textdegree} → ^{\circ}  (Phase 2 sometimes uses \textdegree)
+  text = text.replace(new RegExp(`${BS}text\\{${BS}textdegree\\}`, 'g'), '^{\\circ}');
+  // \textdegree → ^{\circ}  (bare, without \text wrapper)
+  text = text.replace(new RegExp(`${BS}textdegree`, 'g'), '^{\\circ}');
+  // \textcirc → \circ  (Phase 2 invents \textcirc)
+  text = text.replace(new RegExp(`${BS}textcirc\\b`, 'g'), '\\circ');
   // \text{\circ} → \circ
   text = text.replace(new RegExp(`${BS}text\\{${BS}circ\\}`, 'g'), '\\circ');
 
   // \text{\alpha}, \text{\beta}, etc.
-  const greekLetters = ['alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'sigma', 'omega', 'mu', 'epsilon', 'phi', 'psi', 'rho', 'tau', 'nu'];
+  const greekLetters = ['alpha', 'beta', 'gamma', 'delta', 'theta', 'lambda', 'sigma', 'omega', 'mu', 'epsilon', 'phi', 'psi', 'rho', 'tau', 'nu', 'kappa', 'xi', 'zeta', 'eta', 'iota', 'upsilon', 'chi'];
   for (const letter of greekLetters) {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${letter}\\}`, 'g'), `\\${letter}`);
   }
 
   // \text{\times} → \times, \text{\cdot} → \cdot, etc.
-  const operators = ['times', 'cdot', 'div', 'pm', 'neq', 'geq', 'leq', 'infty', 'approx'];
+  const operators = ['times', 'cdot', 'div', 'pm', 'neq', 'geq', 'leq', 'infty', 'approx',
+    'leftarrow', 'rightarrow', 'uparrow', 'downarrow', 'to', 'angle', 'perp', 'parallel'];
   for (const op of operators) {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
   }
+
+  // --- General catch-all: \text{\commandArgs} → \command Args ---
+  // Handles cases like \text{\angleCDB} → \angle CDB, \text{\overlineAB} → \overline AB
+  // LaTeX commands are lowercase; uppercase letters after them are arguments
+  text = text.replace(new RegExp(`${BS}text\\{(${BS}[a-z]+)([A-Z][^}]*)\\}`, 'g'), (_, cmd, rest) => {
+    const normalizedCmd = cmd.replace(/^\\\\/, '\\');
+    return `${normalizedCmd} ${rest}`;
+  });
+
+  // --- \$ inside math → move dollar sign outside math ---
+  // $\$ 30000$ → \$30000 (currency amount, no math needed)
+  // $\$\left(3 \cdot 30000 \cdot \frac{20}{100}\right)$ → \$ $\left(...)$
+  // The frontend parser converts \$ to literal $ outside math mode
+  text = text.replace(/\$\\\$\s*([^$]+)\$/g, (match, content) => {
+    const trimmed = content.trim();
+    // If content is just a number/currency amount, no math needed
+    if (/^[\d.,\s]+$/.test(trimmed)) {
+      return `\\$${trimmed}`;
+    }
+    // Otherwise, keep content in math but move \$ outside
+    return `\\$ $${trimmed}$`;
+  });
 
   // --- \sqrt(X) → \sqrt{X} (Phase 2 sometimes uses parens instead of braces) ---
   // Match \sqrt( then balanced content until )
@@ -311,6 +347,7 @@ function fixTextWrappedLatex(text: string): string {
   const allCmds = ['frac', 'sqrt', 'cdot', 'times', 'div', 'pm', 'mp', 'neq', 'geq', 'leq',
     'sim', 'approx', 'infty', 'pi', 'left', 'right', 'mathrm', 'mathbf', 'quad',
     'text', 'vec', 'overline', 'hat', 'bar', 'log', 'ln', 'sin', 'cos', 'tan',
+    'angle', 'perp', 'parallel', 'leftarrow', 'rightarrow', 'uparrow', 'downarrow', 'to',
     ...greekLetters];
   for (const cmd of allCmds) {
     // Match \\cmd but not \\\cmd (already triple-escaped or escaped backslash + cmd)
@@ -344,6 +381,8 @@ const UNICODE_TO_LATEX: [RegExp, string][] = [
   // Arrows
   [/→/g, '\\to'],
   [/←/g, '\\leftarrow'],
+  [/↑/g, '\\uparrow'],
+  [/↓/g, '\\downarrow'],
   [/↔/g, '\\leftrightarrow'],
   [/⇒/g, '\\Rightarrow'],
   [/⇐/g, '\\Leftarrow'],
@@ -466,7 +505,7 @@ const UNICODE_TO_LATEX: [RegExp, string][] = [
 ];
 
 // Regex to detect if a string contains Unicode math symbols that should be LaTeX
-const UNICODE_MATH_PATTERN = /[×÷±∓·≤≥≠≈≡∼→←↔⇒⇐⇔αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ∞∂∇∈∉⊂⊃⊆⊇∪∩∅∀∃¬∧∨∑∏∫½⅓⅔¼¾√²³¹⁰⁴⁵⁶⁷⁸⁹⁻⁺₀₁₂₃₄₅₆₇₈₉°′″∠⊥∥△]/;
+const UNICODE_MATH_PATTERN = /[×÷±∓·≤≥≠≈≡∼→←↑↓↔⇒⇐⇔αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ∞∂∇∈∉⊂⊃⊆⊇∪∩∅∀∃¬∧∨∑∏∫½⅓⅔¼¾√²³¹⁰⁴⁵⁶⁷⁸⁹⁻⁺₀₁₂₃₄₅₆₇₈₉°′″∠⊥∥△]/;
 
 // LaTeX command pattern (to detect if already in LaTeX)
 const LATEX_CMD_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|vec|overline|hat|bar|sum|prod|int|lim|log|ln|sin|cos|tan|text|mathrm|mathbf|left|right|begin|end)\b/;
@@ -555,6 +594,10 @@ export function postProcessMathText(text: string): string {
   if (hasUnicodeMathOutsideDollars(text)) {
     text = processTextSegments(text, convertUnicodeSegment);
   }
+
+  // Step 4: Re-run fixTextWrappedLatex AFTER Unicode conversion
+  // Unicode → LaTeX conversion (e.g., ° → ^{\circ}) can create new \text{^{\circ}X} patterns
+  text = fixTextWrappedLatex(text);
 
   return text;
 }

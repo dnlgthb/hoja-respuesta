@@ -48,7 +48,7 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 - [x] Dashboard con lista de pruebas
 - [x] Crear prueba + upload PDF
 - [x] Análisis automático con IA
-- [x] Editor de preguntas por tipo (V/F, múltiple opción, desarrollo, matemática)
+- [x] Editor de preguntas por tipo (V/F, múltiple opción, desarrollo, matemática) — preview-first con toggle edición
 - [x] Configuración de puntajes
 - [x] Activación con código de 6 caracteres y QR
 - [x] Duplicar pruebas existentes (copia con preguntas)
@@ -179,6 +179,19 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Renderiza fórmulas usando MathLive (convertLatexToMarkup)
   - Integrado en: editor de preguntas, vista estudiante, resultados, modal rúbrica
   - Fix prompt IA: opciones con imágenes usan "[Ver imagen en el PDF]" en vez de repetir letra
+- [x] Editor preview-first (QuestionEditor refactor):
+  - Por defecto muestra preguntas renderizadas (RichMathText) en vez de textarea con LaTeX crudo
+  - Toggle editar/ver con íconos lápiz/check para texto de pregunta y opciones de alternativas
+  - Radios de respuesta correcta funcionan en ambos modos (preview y edición)
+  - Respuesta correcta resaltada en verde en modo preview
+  - Mejora drástica de legibilidad en pruebas con muchas preguntas (ej: PAES14, 65 preguntas)
+- [x] Editor WYSIWYG para texto de preguntas y opciones de alternativas:
+  - MathField (WYSIWYG) por defecto al editar texto de pregunta y opciones
+  - Botones del toolbar (a/b, √, xⁿ, etc.) insertan elementos gráficos, no LaTeX crudo
+  - Toggle Tx/𝑓x para cambiar entre MathField y textarea por opción
+  - Conversión automática texto mixto ↔ \text{} para MathField
+  - MathField compact prop para opciones de alternativas (tamaño reducido)
+  - Fix: insertSymbol manipula .value directamente (no .insert()) para evitar que \text{} bloquee inserciones math
 
 ---
 

@@ -39,6 +39,7 @@ hoja-respuesta/
 │   │   └── utils/
 │   │       ├── generateCode.ts  # Genera código 6 chars
 │   │       ├── gradeCalculator.ts # Cálculo nota chilena
+│   │       ├── mathPostProcess.ts # Fix LaTeX escapes, repair broken, Unicode→LaTeX
 │   │       └── pdfExtractor.ts  # Convierte PDF a base64 para Vision API
 │   └── prisma/
 │       └── schema.prisma        # Modelos BD
@@ -67,9 +68,10 @@ hoja-respuesta/
 │       ├── components/
 │       │   ├── Navbar.tsx
 │       │   ├── ProtectedRoute.tsx
-│       │   ├── QuestionEditor.tsx
+│       │   ├── QuestionEditor.tsx  # Editor preguntas (preview-first + toggle edición)
 │       │   ├── TestCard.tsx
 │       │   ├── MathField.tsx      # Editor interactivo MathLive (LaTeX)
+│       │   ├── MathToolbar.tsx    # Barra botones math reutilizable (fracción, raíz, etc.)
 │       │   ├── MathDisplay.tsx    # Render LaTeX puro (MathLive)
 │       │   └── RichMathText.tsx   # Render texto mixto + LaTeX ($...$)
 │       ├── lib/

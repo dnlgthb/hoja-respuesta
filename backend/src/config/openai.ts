@@ -1,6 +1,7 @@
 // Cliente de OpenAI - Para análisis de documentos con IA
 import OpenAI from 'openai';
 import { env } from './env';
+import { postProcessQuestion, fixLatexInJsonString } from '../utils/mathPostProcess';
 
 // Crear cliente de OpenAI con timeout generoso para PDFs grandes
 const openai = new OpenAI({
@@ -130,14 +131,21 @@ async function analyzeDocumentChunk(
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const responseText = completion.choices[0].message.content || '{}';
-  const parsed = JSON.parse(responseText);
-  const questions = parsed.questions || [];
 
-  // DEBUG: Log sample of first question to check $ delimiters
-  if (questions.length > 0) {
-    const sample = questions[0];
-    console.log(`  📝 [${elapsed}s] Sample Q: text="${(sample.text || '').substring(0, 100)}" | options=${JSON.stringify((sample.options || []).slice(0, 2))}`);
+  // Fix LaTeX backslashes BEFORE JSON.parse to prevent escape destruction
+  // e.g., \frac → form-feed+rac, \times → tab+imes
+  const fixedJson = fixLatexInJsonString(responseText);
+  if (fixedJson !== responseText) {
+    console.log(`  🔧 Fixed LaTeX escapes in JSON response`);
   }
+
+  const parsed = JSON.parse(fixedJson);
+  const rawQuestions = parsed.questions || [];
+
+  console.log(`  📝 ${rawQuestions.length} questions extracted (${elapsed}s)`);
+
+  // Post-process: convert Unicode math to LaTeX, fix bare commands, repair broken escapes
+  const questions = rawQuestions.map((q: any) => postProcessQuestion(q));
 
   return questions;
 }

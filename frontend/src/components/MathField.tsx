@@ -9,9 +9,10 @@ interface MathFieldProps {
   onChange: (latex: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  compact?: boolean;
 }
 
-export default function MathField({ value, onChange, placeholder, disabled }: MathFieldProps) {
+export default function MathField({ value, onChange, placeholder, disabled, compact }: MathFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mathfieldRef = useRef<MathfieldElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -35,10 +36,10 @@ export default function MathField({ value, onChange, placeholder, disabled }: Ma
       // Estilos
       mathfield.style.display = 'block';
       mathfield.style.width = '100%';
-      mathfield.style.minHeight = '60px';
-      mathfield.style.padding = '12px';
-      mathfield.style.fontSize = '18px';
-      mathfield.style.border = '2px solid #14B8A6';
+      mathfield.style.minHeight = compact ? '38px' : '60px';
+      mathfield.style.padding = compact ? '6px 10px' : '12px';
+      mathfield.style.fontSize = compact ? '16px' : '18px';
+      mathfield.style.border = `2px solid ${compact ? '#D1D5DB' : '#14B8A6'}`;
       mathfield.style.borderRadius = '0 0 8px 8px';
       mathfield.style.backgroundColor = disabled ? '#F3F4F6' : '#FFFFFF';
 
@@ -83,7 +84,15 @@ export default function MathField({ value, onChange, placeholder, disabled }: Ma
 
   const insertSymbol = (latex: string) => {
     if (mathfieldRef.current) {
-      mathfieldRef.current.insert(latex, { focus: true });
+      const mf = mathfieldRef.current;
+      // When content has \text{} blocks, cursor may be in text mode.
+      // Directly manipulate the value to append math at the end.
+      const currentValue = mf.value;
+      const cleanLatex = latex.replace(/#0/g, '\\placeholder{}');
+      const newValue = currentValue + cleanLatex;
+      mf.value = newValue;
+      onChange(mf.value);
+      mf.focus();
     }
   };
 
@@ -100,19 +109,19 @@ export default function MathField({ value, onChange, placeholder, disabled }: Ma
   return (
     <div className="mathfield-container">
       {/* Instrucción visible */}
-      {placeholder && !value && (
+      {!compact && placeholder && !value && (
         <p className="text-sm text-gray-500 mb-2">{placeholder}</p>
       )}
 
       {/* Barra de herramientas */}
-      <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border border-gray-200 rounded-t-lg border-b-0">
+      <div className={`flex flex-wrap gap-1 ${compact ? 'p-1.5' : 'p-2'} bg-gray-50 border border-gray-200 rounded-t-lg border-b-0`}>
         {toolbarButtons.map((btn, i) => (
           <button
             key={i}
             type="button"
             title={btn.title}
             disabled={disabled}
-            className="px-2 py-1 bg-white border border-gray-300 rounded text-sm hover:bg-teal-500 hover:text-white hover:border-teal-500 transition-colors min-w-[32px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-current disabled:hover:border-gray-300"
+            className={`${compact ? 'px-1.5 py-0.5 text-xs min-w-[26px]' : 'px-2 py-1 text-sm min-w-[32px]'} bg-white border border-gray-300 rounded hover:bg-teal-500 hover:text-white hover:border-teal-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-current disabled:hover:border-gray-300`}
             onClick={() => insertSymbol(btn.latex)}
           >
             {btn.label}
@@ -123,10 +132,12 @@ export default function MathField({ value, onChange, placeholder, disabled }: Ma
       {/* Contenedor para math-field */}
       <div ref={containerRef} />
 
-      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-        <span>💡</span>
-        Usa la barra de herramientas o escribe directamente.
-      </p>
+      {!compact && (
+        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+          <span>💡</span>
+          Usa la barra de herramientas o escribe directamente.
+        </p>
+      )}
     </div>
   );
 }

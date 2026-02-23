@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import 'mathlive/static.css';
 
 interface RichMathTextProps {
   text: string;
@@ -13,13 +14,64 @@ interface Segment {
 }
 
 // Common LaTeX commands that indicate math content without $ delimiters
-const BARE_LATEX_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|underline|hat|bar|dot|sum|prod|int|lim|log|ln|sin|cos|tan|sec|csc|cot|text|mathrm|mathbf|left|right|begin|end)\b/;
+const BARE_LATEX_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|underline|hat|bar|dot|sum|prod|int|lim|log|ln|sin|cos|tan|sec|csc|cot|text|mathrm|mathbf|textbf|left|right|begin|end)\b/;
+
+/**
+ * Repair LaTeX commands destroyed by JSON.parse escape interpretation.
+ * When AI returns \frac in JSON, \f becomes form-feed (0x0C), \t becomes tab (0x09), etc.
+ * This repairs the mangled text so MathLive can render it.
+ */
+function repairBrokenLatex(text: string): string {
+  if (!text) return text;
+
+  // Quick check: if no control chars, nothing to repair
+  // eslint-disable-next-line no-control-regex
+  if (!/[\x08\x09\x0A\x0C\x0D]/.test(text)) return text;
+
+  let result = text;
+
+  // \f (0x0C form-feed) → \frac, \forall
+  result = result.replace(/\x0Crac(?=[{\s(]|$)/g, '\\frac');
+  result = result.replace(/\x0Corall\b/g, '\\forall');
+
+  // \t (0x09 tab) → \times, \text, \textbf, \theta, \tau, \to, \triangle, \tan
+  result = result.replace(/\x09extbf\b/g, '\\textbf');
+  result = result.replace(/\x09imes\b/g, '\\times');
+  result = result.replace(/\x09ext(?=[{\s\\]|$)/g, '\\text');
+  result = result.replace(/\x09heta\b/g, '\\theta');
+  result = result.replace(/\x09au\b/g, '\\tau');
+  result = result.replace(/\x09riangle\b/g, '\\triangle');
+  result = result.replace(/\x09an(?=[{\s(]|$)/g, '\\tan');
+  result = result.replace(/\x09o\b/g, '\\to');
+
+  // \n (0x0A newline) → \neq, \nu, \neg, \nabla, \notin
+  result = result.replace(/\x0Aeq\b/g, '\\neq');
+  result = result.replace(/\x0Au\b/g, '\\nu');
+  result = result.replace(/\x0Aeg\b/g, '\\neg');
+  result = result.replace(/\x0Aabla\b/g, '\\nabla');
+  result = result.replace(/\x0Aotin\b/g, '\\notin');
+
+  // \r (0x0D carriage return) → \right, \rho
+  result = result.replace(/\x0Dight\b/g, '\\right');
+  result = result.replace(/\x0Dho\b/g, '\\rho');
+
+  // \b (0x08 backspace) → \bar, \beta, \begin, \binom
+  result = result.replace(/\x08ar(?=[{\s(]|$)/g, '\\bar');
+  result = result.replace(/\x08eta\b/g, '\\beta');
+  result = result.replace(/\x08egin\b/g, '\\begin');
+  result = result.replace(/\x08inom\b/g, '\\binom');
+
+  return result;
+}
 
 /**
  * Pre-process text to wrap bare LaTeX commands in $ delimiters.
  */
 function preprocessLatex(input: string): string {
   if (!input) return input;
+
+  // Step 0: Repair control characters from JSON.parse escape destruction
+  input = repairBrokenLatex(input);
 
   // If already has $ delimiters, return as-is
   if (input.includes('$')) return input;
@@ -134,11 +186,12 @@ function stripDollarSigns(text: string): string {
 
 // Cache MathLive module to avoid re-importing on every component mount
 let mathLivePromise: Promise<any> | null = null;
+let mathLiveLoaded = false;
 function getMathLive() {
   if (!mathLivePromise) {
     mathLivePromise = import('mathlive').then((mod) => {
       mod.MathfieldElement.fontsDirectory = null;
-      console.log('[RichMathText] MathLive loaded successfully');
+      mathLiveLoaded = true;
       return mod;
     }).catch((err) => {
       console.error('[RichMathText] Failed to load MathLive:', err);
@@ -157,6 +210,7 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
   const segments = useMemo(() => parseMathText(text), [text]);
   const hasMath = useMemo(() => segments.some(s => s.type !== 'text'), [segments]);
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
+
 
   useEffect(() => {
     if (!hasMath) return;
@@ -183,19 +237,18 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
               }
               return markup;
             } catch (err) {
-              console.warn('[RichMathText] Failed to render:', seg.content, err);
+              console.error(`[RichMathText] Failed to render: "${seg.content}"`, err);
               return seg.content;
             }
           })
           .join('');
 
         if (!cancelled) {
-          console.log('[RichMathText] Rendered:', text.substring(0, 60), '→ html length:', html.length);
           setRenderedHtml(html);
         }
       })
       .catch((err) => {
-        console.error('[RichMathText] MathLive error:', err);
+        console.error('[RichMathText] MathLive load/render error:', err);
       });
 
     return () => { cancelled = true; };

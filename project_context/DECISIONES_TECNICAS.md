@@ -260,7 +260,8 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 **Decisión:** Usar MathLive para entrada y visualización de expresiones matemáticas
 
 **Componentes:**
-- **MathField:** Editor interactivo con barra de herramientas (fracciones, raíces, exponentes, etc.)
+- **MathField:** Editor WYSIWYG con barra de herramientas (fracciones, raíces, exponentes, etc.). Soporta `compact` prop para uso en opciones de alternativas.
+- **MathToolbar:** Barra de 12 botones reutilizable (fracción, raíz, exponente, subíndice, π, ±, ∞, ≠, ≤, ≥, ×, ·)
 - **MathDisplay:** Renderizado estático de LaTeX puro (usa `convertLatexToMarkup`)
 - **RichMathText:** Renderizado de texto mixto con LaTeX inline (`$...$` y `$$...$$`)
 
@@ -269,9 +270,10 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - Usa fuentes del sistema (`fontsDirectory = null`)
 - RichMathText parsea delimitadores `$...$` y renderiza cada segmento por separado
 - Si el texto no contiene `$`, retorna texto plano sin cargar MathLive (optimización)
+- `insertSymbol` manipula `.value` directamente (no `.insert()`) para evitar que MathLive trate LaTeX como texto dentro de bloques `\text{}`
 
 **Dónde se usa RichMathText:**
-- QuestionEditor: header preview de texto de pregunta
+- QuestionEditor: preview de texto de pregunta y opciones de alternativas (modo preview-first)
 - Vista estudiante: texto de preguntas y opciones de alternativas
 - Resultados: texto de preguntas, respuesta correcta, modal de criterios
 - Editor de prueba: modal de rúbrica
@@ -281,3 +283,29 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - Soporte nativo de LaTeX
 - Teclado virtual opcional
 - Funciona bien en móviles
+
+---
+
+## Editor Preview-First (QuestionEditor)
+
+**Decisión:** Mostrar preguntas en modo preview renderizado por defecto, con edición colapsable via toggle
+
+**Problema resuelto:** Con 65 preguntas (PAES14), el editor mostraba para cada pregunta: MathToolbar (12 botones) + textarea con LaTeX crudo + vista previa. La página era interminable e ilegible para el profesor.
+
+**Patrón implementado:**
+- **Modo preview (default):** Solo muestra RichMathText renderizado — el profesor ve la pregunta como la verá el estudiante
+- **Modo edición (toggle):** Click en ícono lápiz o en el preview → abre MathField WYSIWYG (por defecto) o textarea
+- Toggle "Tx/𝑓x" permite cambiar entre MathField y textarea
+- Click en ícono check → colapsa de vuelta al preview
+- Estados se resetean al colapsar la pregunta
+
+**Aplica a:**
+- Texto de la pregunta (toggle `isEditingText`, `textMathMode` default true)
+- Opciones de alternativas (toggle `isEditingOptions`, `optionMathMode[]` auto-detect por opción)
+- Conversión automática texto mixto ↔ `\text{}` para MathField
+- Radios de respuesta correcta funcionan en ambos modos (no necesita abrir editor)
+
+**No aplica a (ya compactos):**
+- TRUE_FALSE: solo 2 radios
+- DEVELOPMENT: solo textarea de criterios
+- MATH: MathField ya es WYSIWYG

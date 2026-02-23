@@ -23,37 +23,77 @@ REGLAS DE TRANSCRIPCIÓN:
 4. Mantén la estructura visual: números de pregunta, opciones (A, B, C, D), etc.
 
 REGLAS CRÍTICAS PARA NOTACIÓN MATEMÁTICA:
-- SUPERÍNDICES/EXPONENTES: Un número o expresión pequeño ARRIBA de otro es un EXPONENTE.
-  - Si ves "14" con un "2" pequeño arriba → $14^{2}$ (catorce al cuadrado)
-  - Si ves "2" con un "6" pequeño arriba → $2^{6}$ (dos a la sexta)
-  - Si ves "10" con un "2" pequeño arriba → $10^{2}$ (diez al cuadrado)
-  - Si ves "(888)" con un "2" pequeño arriba → $(888)^{2}$ (888 al cuadrado)
-  - NUNCA confundas un exponente con multiplicación: "2⁶" es $2^{6}$, NO $2 \\times 6$ ni $26$
 
-- EXPONENTES FRACCIONARIOS: Si el exponente es una fracción pequeña arriba del número:
-  - "2" con "9/2" arriba → $2^{\\frac{9}{2}}$ (dos elevado a nueve medios)
-  - "2" con "-1/6" arriba → $2^{-\\frac{1}{6}}$ (dos elevado a menos un sexto)
+SUPERÍNDICES/EXPONENTES — Un número o expresión pequeño ARRIBA de otro es un EXPONENTE:
+  - "14" con "2" pequeño arriba → $14^{2}$
+  - "2" con "6" pequeño arriba → $2^{6}$ (NO $26$ ni $2 \\times 6$)
+  - "10" con "2" pequeño arriba → $10^{2}$
+  - "(888)" con "2" pequeño arriba → $(888)^{2}$
+  - NUNCA confundas un exponente con multiplicación
+
+PRODUCTOS CON MÚLTIPLES EXPONENTES — CADA factor tiene su PROPIO exponente:
+  - "2⁶ · 111²" → $2^{6} \\cdot 111^{2}$ (el 6 es exponente de 2, el 2 es exponente de 111)
+  - "3⁴ · 7²" → $3^{4} \\cdot 7^{2}$ (el 4 es exponente de 3, el 2 es exponente de 7)
+  - "2³ · 5² · 11" → $2^{3} \\cdot 5^{2} \\cdot 11$
+  - REGLA: Lee CADA base con SU exponente de izquierda a derecha. NO muevas exponentes entre factores.
+  - ERROR COMÚN: "2⁶ · 111²" transcrito como "$2 \\cdot 111^{6}$" — INCORRECTO, cada exponente pertenece a su base
+
+EXPONENTES FRACCIONARIOS — Si el exponente es una fracción pequeña arriba:
+  - "2" con "9/2" arriba → $2^{\\frac{9}{2}}$
+  - "2" con "-1/6" arriba → $2^{-\\frac{1}{6}}$
   - NUNCA escribas el exponente fraccionario como una fracción independiente
 
-- SUBÍNDICES: Un número o letra pequeño ABAJO es un subíndice.
+SUBÍNDICES — Un número o letra pequeño ABAJO es un subíndice:
   - "D" con "AB" abajo → $D_{AB}$
   - "x" con "1" abajo → $x_{1}$
+  - "log" con "2" abajo → $\\log_{2}$
 
-- RAÍCES: El símbolo √ con una barra horizontal encima de la expresión es una RAÍZ CUADRADA.
+RAÍCES:
   - √2 → $\\sqrt{2}$
-  - √(2⁶) → $\\sqrt{2^{6}}$ (raíz cuadrada de 2 a la 6)
+  - √(2⁶) → $\\sqrt{2^{6}}$
+  - ³√8 (raíz cúbica) → $\\sqrt[3]{8}$
+  - ⁿ√x (raíz n-ésima) → $\\sqrt[n]{x}$
   - NUNCA confundas √ con una fracción
 
-- FRACCIONES: Una barra horizontal con expresiones arriba y abajo es una fracción.
+FRACCIONES — Barra horizontal con expresiones arriba y abajo:
   - Numerador arriba, denominador abajo → $\\frac{numerador}{denominador}$
+  - Fracciones anidadas: $\\frac{\\frac{a}{b}}{\\frac{c}{d}}$
 
-- PRODUCTO/MULTIPLICACIÓN: Un punto centrado (·) entre expresiones es multiplicación.
-  - 2⁶ · 111² → $2^{6} \\cdot 111^{2}$
+PRODUCTO/MULTIPLICACIÓN:
+  - Punto centrado (·) → $\\cdot$
+  - Signo × → $\\times$
+  - Multiplicación implícita (2x sin símbolo) → $2x$
 
-- GRADOS: El símbolo ° después de un número → $135^{\\circ}$
-- PI: El símbolo π → $\\pi$
+LOGARITMOS:
+  - log₂(x) → $\\log_{2}(x)$
+  - ln(x) → $\\ln(x)$
+  - log(x) → $\\log(x)$
 
-FORMATO DE SALIDA - Texto plano con la transcripción fiel de cada página.
+TRIGONOMETRÍA:
+  - sen(x) o sin(x) → $\\sin(x)$
+  - cos(x) → $\\cos(x)$
+  - tan(x) → $\\tan(x)$
+  - sin²(x) → $\\sin^{2}(x)$
+
+CONJUNTOS:
+  - ∩ (intersección) → $\\cap$
+  - ∪ (unión) → $\\cup$
+  - ∈ (pertenece) → $\\in$
+  - ⊂ (subconjunto) → $\\subset$
+
+OTROS SÍMBOLOS:
+  - ° (grados) → $^{\\circ}$ (ej: $135^{\\circ}$)
+  - π → $\\pi$
+  - ∞ → $\\infty$
+  - ≤ → $\\leq$, ≥ → $\\geq$, ≠ → $\\neq$
+  - → (flecha) → $\\to$
+  - ± → $\\pm$
+  - Notación científica: 2×10⁻⁵ → $2 \\times 10^{-5}$
+
+VECTORES:
+  - Flecha sobre letra → $\\vec{u}$, $\\vec{v}$
+
+FORMATO DE SALIDA — Texto plano con la transcripción fiel de cada página.
 Si una página es portada, instrucciones o está en blanco, escribe "[Página de instrucciones/portada/blanco]".
 Si hay una imagen, tabla o gráfico, descríbelo entre corchetes: [Imagen: descripción]
 Si las opciones de una pregunta son imágenes/gráficos, descríbelas: "A) [Gráfico: descripción]"`;
@@ -67,16 +107,27 @@ Recibirás la transcripción fiel (OCR) de una prueba. Tu trabajo es ESTRUCTURAR
 
 INSTRUCCIONES:
 1. Identifica cada pregunta por su número
-2. Clasifica el tipo: TRUE_FALSE, MULTIPLE_CHOICE, DEVELOPMENT, o MATH
+2. Clasifica el tipo según las reglas de abajo
 3. Extrae el texto completo, opciones y contexto
 4. Las expresiones matemáticas ya vienen en LaTeX con $...$  — cópialas TAL CUAL
 
-REGLAS:
-- NUNCA modifiques las expresiones matemáticas de la transcripción
-- Si la transcripción dice $14^{2} + \\frac{1}{5^{-2}}$, copia EXACTAMENTE eso
-- Si la transcripción dice $(888)^{2}$, copia EXACTAMENTE eso
+CLASIFICACIÓN DE TIPO:
+- MULTIPLE_CHOICE: Tiene opciones A), B), C), D). La gran mayoría de preguntas en pruebas estandarizadas son de este tipo.
+- TRUE_FALSE: Afirmación para evaluar como Verdadera o Falsa. Puede requerir justificación.
+- MATH: Pregunta abierta donde el estudiante debe dar un resultado numérico/expresión. Señales: "Calcula", "Determina el valor", "Resuelve". NO tiene opciones.
+- DEVELOPMENT: Pregunta abierta de redacción/explicación. Señales: "Explica", "Justifica", "Analiza", "Describe". NO tiene opciones.
+NOTA: Si una pregunta tiene opciones A/B/C/D, SIEMPRE es MULTIPLE_CHOICE, sin importar si el contenido es matemático.
+
+REGLAS PARA EXPRESIONES MATEMÁTICAS:
+- NUNCA modifiques las expresiones de la transcripción
+- Copia EXACTAMENTE: $14^{2}$, $(888)^{2}$, $2^{6} \\cdot 111^{2}$, etc.
 - Opciones: incluye la letra y contenido completo. Ej: "A) $2^{6} \\cdot 111^{2}$"
 - Si una opción dice "[Ver imagen en el PDF]" o similar, mantenlo
+
+VALIDACIÓN DE OPCIONES:
+- MULTIPLE_CHOICE debe tener exactamente 4 opciones (A, B, C, D)
+- Si solo encuentras 3 opciones visibles y hay una imagen, la 4ta podría estar en la imagen
+- NO inventes opciones que no estén en la transcripción
 
 PREGUNTAS CON IMÁGENES:
 - Si la transcripción indica [Imagen: ...], pon has_image: true y la descripción en image_description
@@ -107,7 +158,8 @@ IMPORTANTE:
 - "text" DEBE incluir la instrucción completa, no solo la fórmula
 - "number" es STRING (permite "I.a", "2.b", etc.)
 - Si hay puntaje indicado, úsalo; si no, usa 1 punto
-- Si no hay preguntas en la transcripción, retorna {"questions": []}`;
+- Si no hay preguntas en la transcripción, retorna {"questions": []}
+- NO omitas preguntas — si la transcripción tiene preguntas 1-15, el JSON debe tener las 15`;
 
 // Tipo para callback de progreso
 export type ProgressCallback = (data: {
@@ -831,7 +883,7 @@ async function analyzeRubricChunk(
         ],
       },
     ],
-    temperature: 0.3,
+    temperature: 0.0,
     max_tokens: 16000,
     response_format: { type: 'json_object' },
   });

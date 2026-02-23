@@ -265,6 +265,9 @@ NOTA: Si una pregunta tiene opciones A/B/C/D, SIEMPRE es MULTIPLE_CHOICE, sin im
 REGLAS PARA EXPRESIONES MATEMÁTICAS:
 - NUNCA modifiques las expresiones de la transcripción
 - Copia EXACTAMENTE: $14^{2}$, $(888)^{2}$, $2^{6} \\cdot 111^{2}$, etc.
+- NO cambies \\cdot por \\times ni viceversa — copia el operador exacto del texto
+- NO cambies \\sqrt{X} por \\sqrt(X) — mantén las llaves {} tal como están
+- NO cambies \\mathrm por \\text ni viceversa — copia el comando exacto
 - Opciones: incluye la letra y contenido completo. Ej: "A) $2^{6} \\cdot 111^{2}$"
 - Si una opción dice "[Ver imagen en el PDF]" o similar, mantenlo
 

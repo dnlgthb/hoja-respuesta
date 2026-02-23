@@ -288,6 +288,13 @@ function fixTextWrappedLatex(text: string): string {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
   }
 
+  // --- \sqrt(X) → \sqrt{X} (Phase 2 sometimes uses parens instead of braces) ---
+  // Match \sqrt( then balanced content until )
+  text = text.replace(/\\sqrt\(([^)]*)\)/g, '\\sqrt{$1}');
+
+  // --- \times → \cdot (Phase 2 converts \cdot to \times; Mathpix never uses \times) ---
+  text = text.replace(/\\times/g, '\\cdot');
+
   // --- Bare \% outside $...$ → just % (Mathpix uses \% for percent in text) ---
   // Only replace \% that is NOT inside $...$; postProcessMathText handles segmentation,
   // but \% in plain text should just be %

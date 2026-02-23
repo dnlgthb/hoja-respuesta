@@ -10,7 +10,7 @@ const openai = new OpenAI({
 });
 
 // Prompt del sistema para extracción de preguntas (compartido entre llamadas)
-const ANALYZE_SYSTEM_PROMPT = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas.
+const ANALYZE_SYSTEM_PROMPT = `Eres un asistente especializado en extraer preguntas de pruebas educativas chilenas (PAES, SIMCE, etc.).
 
 INSTRUCCIONES:
 1. Analiza el documento PDF y extrae TODAS las preguntas que encuentres.
@@ -22,17 +22,43 @@ INSTRUCCIONES:
    - Opciones (si aplica)
    - Respuesta correcta (si es posible deducirla)
 
-REGLAS CRÍTICAS PARA EXPRESIONES MATEMÁTICAS:
-- Transcribe TODAS las expresiones matemáticas usando formato LaTeX SIEMPRE envueltas en delimitadores $...$
-- SIEMPRE usa $...$ para delimitar expresiones matemáticas inline. Ejemplo: "Calcula $\\frac{3}{4} + \\frac{2}{8}$"
-- NUNCA escribas comandos LaTeX sin delimitadores $. Incorrecto: "\\frac{3}{4}" Correcto: "$\\frac{3}{4}$"
-- NUNCA escribas \\cdot, \\times, \\pi etc. sin envolverlos en $...$. Incorrecto: "3 \\cdot 5" Correcto: "$3 \\cdot 5$"
+REGLA FUNDAMENTAL - TRANSCRIPCIÓN FIEL:
+Tu trabajo es TRANSCRIBIR exactamente lo que aparece en el PDF, NO interpretar, simplificar ni reestructurar las expresiones matemáticas.
+- NUNCA simplifiques expresiones: si el PDF dice $\\sqrt{2} \\cdot \\sqrt{2^{6}}$, escribe exactamente eso, NO $\\sqrt{2} \\cdot \\sqrt{6}$.
+- NUNCA conviertas una expresión a otra forma equivalente. Copia lo que ves.
+- Si ves un símbolo de raíz cuadrada (√), SIEMPRE usa \\sqrt{}. NUNCA lo confundas con una fracción.
+- Si ves un exponente que es una fracción (como $2^{\\frac{1}{6}}$), escríbelo como exponente fraccionario, NO como una fracción simple ($\\frac{1}{6}$).
+
+ERRORES COMUNES QUE DEBES EVITAR:
+1. RAÍCES vs FRACCIONES: El símbolo √ (raíz cuadrada) NO es una fracción. Si ves √2, escribe $\\sqrt{2}$, NUNCA $\\frac{1}{2}$.
+   - $h\\sqrt{2}$ (h por raíz de 2) ≠ $h\\frac{1}{2}$ (h medios)
+   - $2\\sqrt{h}$ (2 por raíz de h) ≠ $\\frac{2}{h}$
+   - $2\\sqrt{5}$ (2 por raíz de 5) ≠ $\\frac{2}{5}$
+2. EXPONENTES FRACCIONARIOS: $2^{\\frac{9}{2}}$ (2 elevado a nueve medios) ≠ $\\frac{2}{9}$ ni $\\frac{9}{2}$.
+   - El exponente pequeño arriba del número es un EXPONENTE, no una fracción independiente.
+   - Ejemplo: si ves 2 con un ⁹⁄₂ pequeño arriba, es $2^{\\frac{9}{2}}$, NO $\\frac{2}{9}$.
+3. RAÍCES DENTRO DE PARÉNTESIS: $(\\sqrt{5} + 1)(\\sqrt{5} - 1)$ ≠ $(5 + 1)(5 - 1)$. NO omitas el \\sqrt.
+4. RAÍCES CON EXPONENTES DENTRO: $\\sqrt{2^{6}}$ (raíz de 2 a la 6) ≠ $\\sqrt{6}$. El exponente está DENTRO de la raíz.
+5. GRADOS: 135° se escribe $135°$ o $135^{\\circ}$, NO $135^{\\text{^{\\circ}}}$.
+6. PI: el símbolo π se escribe $\\pi$, NO $\\text{\\pi}$.
+
+REGLAS PARA EXPRESIONES MATEMÁTICAS:
+- SIEMPRE envuelve expresiones matemáticas en delimitadores $...$
+- Ejemplo: "Calcula $\\frac{3}{4} + \\frac{2}{8}$"
+- NUNCA escribas comandos LaTeX sin delimitadores $
 - Fracciones: $\\frac{numerador}{denominador}$
-- Raíces: $\\sqrt{x}$, $\\sqrt[3]{x}$
-- Exponentes: $x^{2}$, $x^{n}$
-- Subíndices: $x_{1}$
-- Símbolos: $\\pi$, $\\geq$, $\\leq$, $\\neq$, $\\sim$, $\\vec{v}$
-- Intervalos: $[p, q]$, $]p, q[$, $[p, q[$, $]p, q]$
+- Raíces: $\\sqrt{x}$, $\\sqrt[3]{x}$, $\\sqrt{x^{2} + y^{2}}$
+- Exponentes: $x^{2}$, $x^{n}$, $2^{\\frac{1}{6}}$
+- Subíndices: $x_{1}$, $D_{AB}$
+- Símbolos: $\\pi$, $\\geq$, $\\leq$, $\\neq$, $\\sim$, $\\vec{v}$, $\\cdot$, $\\times$
+- Intervalos: $[p, q]$, $]p, q[$
+- Grados: $90^{\\circ}$, $135^{\\circ}$
+
+VERIFICACIÓN DE COHERENCIA:
+Después de extraer cada pregunta, verifica:
+- ¿Las opciones son coherentes con la pregunta? Si la pregunta involucra raíces cuadradas, las opciones probablemente también las tienen.
+- ¿Los números de las opciones tienen sentido matemático? Si una opción parece una fracción simple pero la pregunta usa exponentes, probablemente es un exponente fraccionario.
+- Si la pregunta pregunta por el valor de una expresión con √, las opciones probablemente contienen √ o exponentes, no fracciones simples pequeñas.
 
 REGLAS PARA PREGUNTAS CON IMÁGENES/FIGURAS:
 - Si una pregunta incluye una figura, diagrama, tabla o imagen, indícalo en el campo "has_image": true
@@ -50,11 +76,10 @@ REGLAS PARA PREGUNTAS DE OPCIÓN MÚLTIPLE:
 - Si una opción es una imagen o gráfico que NO puedes interpretar, escribe "A) [Ver imagen en el PDF]". NUNCA escribas solo la letra repetida como "A) A)" o "B) B)".
 - Si TODAS las opciones son imágenes que no puedes leer, marca has_image: true e indica en image_description que las opciones son gráficas.
 
-REGLA MÁS IMPORTANTE - TEXTO DE LA PREGUNTA:
+REGLA IMPORTANTE - TEXTO DE LA PREGUNTA:
 El campo "text" debe incluir TODA la instrucción, no solo la expresión matemática.
 EJEMPLO CORRECTO: "Calcula y simplifica: $\\frac{3}{4} + \\frac{2}{8}$"
 EJEMPLO INCORRECTO: "\\frac{3}{4} + \\frac{2}{8}" (falta la instrucción y los delimitadores $)
-EJEMPLO INCORRECTO: "Calcula \\frac{3}{4}" (falta delimitadores $...$ alrededor del LaTeX)
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
 {
@@ -124,7 +149,7 @@ async function analyzeDocumentChunk(
         ],
       },
     ],
-    temperature: 0.3,
+    temperature: 0.1,
     max_tokens: 16000,
     response_format: { type: 'json_object' },
   });

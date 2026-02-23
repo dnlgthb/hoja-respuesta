@@ -278,11 +278,15 @@ async function analyzeDocumentChunk(
   // Phase 1: Faithful OCR transcription
   const transcription = await ocrPdfChunk(chunkBase64, chunkInfo);
 
-  // Skip empty transcriptions (cover pages, instructions, etc.)
-  if (!transcription.trim() || transcription.includes('[Página de instrucciones') || transcription.includes('[Página en blanco')) {
-    console.log(`  ⏭️ Skipping chunk (no questions): ${chunkInfo}`);
+  // Skip only completely empty transcriptions
+  if (!transcription.trim()) {
+    console.log(`  ⏭️ Skipping chunk (empty transcription): ${chunkInfo}`);
     return [];
   }
+
+  // Don't skip chunks that contain instruction/cover page markers —
+  // they may also contain questions on other pages within the same chunk.
+  // Phase 2 (Structure) will simply return [] if no questions are found.
 
   // Phase 2: Structure into JSON
   const questions = await structureTranscription(transcription, chunkInfo);

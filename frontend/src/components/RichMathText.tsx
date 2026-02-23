@@ -258,9 +258,10 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
     return () => { cancelled = true; };
   }, [segments, hasMath]);
 
-  // No math detected → plain text
+  // No math detected → plain text (use processed segments to handle \$ → $ conversion)
   if (!hasMath) {
-    return <span className={className}>{text}</span>;
+    const plainText = segments.map(s => s.content).join('');
+    return <span className={className}>{plainText}</span>;
   }
 
   // MathLive rendered successfully → use dangerouslySetInnerHTML (no React conflicts)

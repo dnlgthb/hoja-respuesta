@@ -271,6 +271,8 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - RichMathText parsea delimitadores `$...$` y renderiza cada segmento por separado
 - Si el texto no contiene `$`, retorna texto plano sin cargar MathLive (optimización)
 - `insertSymbol` manipula `.value` directamente (no `.insert()`) para evitar que MathLive trate LaTeX como texto dentro de bloques `\text{}`
+- Line wrapping: CSS inyectado en shadow DOM para override de `.ML__base { width: min-content }` → `width: 100%`, `.ML__text { white-space: pre }` → `normal`, y overflow visible en `.ML__content`
+- Normalización `\\%` → `\%` en frontend (`RichMathText`) y backend (`mathPostProcess`) para porcentajes double-escaped por la IA
 
 **Dónde se usa RichMathText:**
 - QuestionEditor: preview de texto de pregunta y opciones de alternativas (modo preview-first)

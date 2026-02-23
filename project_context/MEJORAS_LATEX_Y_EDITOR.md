@@ -86,6 +86,30 @@ Se implementó un patrón **preview-first** en `QuestionEditor.tsx`:
 - Solución en `MathField.tsx`: `insertSymbol` manipula `.value` directamente en vez de usar `.insert()`
 - Reemplaza `#0` placeholders por `\placeholder{}` para que MathLive renderice campos editables
 
+**Line wrapping en MathField (commit e176cfe):**
+- MathLive por defecto muestra todo el contenido en una sola línea horizontal (`white-space: nowrap`, `overflow: hidden`)
+- Para preguntas largas, el profesor debía scrollear horizontalmente para ver el texto completo
+- Solución: inyectar CSS en el shadow DOM de MathLive vía `requestAnimationFrame` después de crear el `<math-field>`
+- Overrides necesarios en shadow DOM (adoptedStyleSheets de MathLive):
+  - `.ML__base { width: min-content }` → `width: 100% !important` (el más crítico — sin esto, el contenedor colapsa)
+  - `.ML__text { white-space: pre }` → `white-space: normal !important` (permite word wrap)
+  - `.ML__latex { white-space: normal, flex: 1 1 100% }` (llena el contenedor flex padre)
+  - `.ML__content / .ML__fieldcontainer { overflow: visible }` (evita clipping)
+
+---
+
+## Problema 2.5: Porcentajes con doble backslash (RESUELTO)
+
+### Problema
+- Texto mostraba `20\\%` en vez de `20%`
+- Afectaba texto de preguntas y opciones que contenían `%`
+- Causa: la IA produce `\\%` en el JSON (doble escape) que tras `JSON.parse` queda como `\\%` en vez de `\%`
+
+### Solución (commit 2146e9c)
+- Normalización `\\%` → `\%` en dos lugares:
+  - **Frontend**: `RichMathText.tsx` → `preprocessLatex()` antes de renderizar (arregla datos existentes)
+  - **Backend**: `mathPostProcess.ts` → `postProcessMathText()` antes de guardar (previene datos futuros)
+
 ---
 
 ## Problema 3: Calidad de extracción de la IA

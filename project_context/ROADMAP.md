@@ -192,6 +192,8 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Conversión automática texto mixto ↔ \text{} para MathField
   - MathField compact prop para opciones de alternativas (tamaño reducido)
   - Fix: insertSymbol manipula .value directamente (no .insert()) para evitar que \text{} bloquee inserciones math
+  - Line wrapping en MathField: CSS inyectado en shadow DOM para mostrar texto completo sin scroll horizontal
+  - Fix: normalización \\% → \% en frontend y backend para porcentajes double-escaped por la IA
 
 ---
 

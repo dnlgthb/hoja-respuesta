@@ -60,6 +60,18 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
 
       containerRef.current.appendChild(mathfield);
       mathfieldRef.current = mathfield;
+
+      // Inject line-wrapping CSS into shadow DOM (MathLive defaults to nowrap)
+      requestAnimationFrame(() => {
+        if (mathfield.shadowRoot) {
+          const wrapStyle = document.createElement('style');
+          wrapStyle.textContent = `
+            .ML__latex { white-space: normal !important; }
+            .ML__base { white-space: normal !important; display: inline !important; }
+          `;
+          mathfield.shadowRoot.appendChild(wrapStyle);
+        }
+      });
     }
   }, [isLoaded]);
 

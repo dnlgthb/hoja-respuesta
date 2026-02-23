@@ -7,6 +7,33 @@ import MathField from '@/components/MathField';
 import MathToolbar from '@/components/MathToolbar';
 import RichMathText from '@/components/RichMathText';
 
+/** Truncate text without breaking $...$ LaTeX delimiters */
+function truncateLatexAware(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  // Find last safe cut point: outside a $...$ block
+  let inMath = false;
+  let lastSafeCut = 0;
+  for (let i = 0; i < Math.min(text.length, maxLen); i++) {
+    if (text[i] === '$') {
+      if (!inMath) {
+        // Opening $: safe to cut here (before the math)
+        lastSafeCut = i;
+        inMath = true;
+      } else {
+        // Closing $: safe to cut after
+        inMath = false;
+        lastSafeCut = i + 1;
+      }
+    } else if (!inMath) {
+      lastSafeCut = i + 1;
+    }
+  }
+  // If we're inside math at maxLen, cut before the opening $
+  const cutAt = inMath ? lastSafeCut : maxLen;
+  if (cutAt === 0) return text.substring(0, maxLen) + '...';
+  return text.substring(0, cutAt).trimEnd() + (cutAt < text.length ? '...' : '');
+}
+
 interface QuestionEditorProps {
   question: Question;
   index: number;
@@ -328,7 +355,7 @@ export default function QuestionEditor({
             {typeLabels[localType]}
           </span>
           <span className="text-sm text-gray-500 truncate max-w-xs">
-            <RichMathText text={localText.substring(0, 50) + (localText.length > 50 ? '...' : '')} />
+            <RichMathText text={truncateLatexAware(localText, 80)} />
           </span>
         </div>
 

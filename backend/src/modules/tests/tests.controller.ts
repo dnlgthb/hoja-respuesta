@@ -218,9 +218,20 @@ export class TestsController {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
 
-      const result = await testsService.analyzePDF(id, teacherId, fileBuffer, onProgress);
-      res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
-      res.end();
+      // SSE keep-alive: send a comment every 15s to prevent connection timeout
+      const heartbeat = setInterval(() => {
+        res.write(': heartbeat\n\n');
+      }, 15_000);
+
+      try {
+        const result = await testsService.analyzePDF(id, teacherId, fileBuffer, onProgress);
+        clearInterval(heartbeat);
+        res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
+        res.end();
+      } catch (innerError) {
+        clearInterval(heartbeat);
+        throw innerError;
+      }
 
     } catch (error) {
       // If headers already sent (SSE started), send error as event
@@ -689,6 +700,37 @@ export class TestsController {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Error al actualizar las preguntas' });
+      }
+    }
+  }
+  /**
+   * POST /api/tests/:id/upload-image
+   * Subir imagen para una pregunta
+   */
+  async uploadQuestionImage(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const teacherId = req.teacherId!;
+
+      if (!req.file) {
+        res.status(400).json({ error: 'No se proporcionó ninguna imagen' });
+        return;
+      }
+
+      // Verify test ownership
+      await testsService.getTestById(id, teacherId);
+
+      const { uploadImage } = await import('../../config/storage');
+      const ext = req.file.originalname.split('.').pop() || 'jpg';
+      const filePath = `img_${id}_manual_${Date.now()}.${ext}`;
+      const publicUrl = await uploadImage(req.file.buffer, filePath, req.file.mimetype);
+
+      res.status(200).json({ url: publicUrl });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Error al subir la imagen' });
       }
     }
   }

@@ -131,6 +131,7 @@ model Question {
   has_image           Boolean      @default(false) // Si la pregunta incluye figura/diagrama/imagen
   image_description   String?      @db.Text   // Descripción breve de la imagen asociada
   image_page          Int?                    // Número de página donde está la imagen en el PDF
+  image_url           String?      @db.Text   // URL permanente de la imagen recortada (Supabase Storage)
   require_units       Boolean      @default(false) // Exigir unidades en respuesta (solo MATH)
   unit_penalty        Float        @default(0.5)   // Porcentaje de descuento si falta/está mal
   created_at          DateTime     @default(now())

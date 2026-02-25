@@ -133,12 +133,42 @@ export function fixLatexInJsonString(jsonStr: string): string {
           };
 
           const candidates = knownCommands[next] || [];
-          if (candidates.some(c => cmd.startsWith(c) || cmd === c.substring(0, cmd.length))) {
+          // Must match at least 2 chars to avoid false positives (\n, \t, \r, \b, \f)
+          if (cmd.length > 1 && candidates.some(c => cmd.startsWith(c) || c.startsWith(cmd))) {
             // This IS a LaTeX command that would be destroyed by JSON.parse
             // Double-escape it: \frac → \\frac
             result += '\\\\';
             i += 1; // skip the backslash, the letter will be added in next iteration
             continue;
+          }
+
+          // Fallback: check if text after the escape letter is itself a known LaTeX command.
+          // e.g., \ncdot: 'n' consumed by \n, but 'cdot' is the real \cdot command.
+          // The AI writes \ncdot instead of \cdot, so \n eats the backslash and 'cdot' is orphaned.
+          if (cmd.length > 2) {
+            const afterEscapeLetter = cmd.slice(1);
+            const knownLatexCmds = [
+              'cdot', 'cdots', 'cos', 'cot', 'csc', 'cap', 'cup', 'chi', 'circ',
+              'sqrt', 'sum', 'sin', 'sec', 'sigma', 'subset', 'sim',
+              'frac', 'forall', 'flat',
+              'times', 'text', 'theta', 'tau', 'triangle', 'tan',
+              'right', 'rho', 'bar', 'beta', 'begin', 'binom',
+              'left', 'lambda', 'leq', 'log', 'ln',
+              'alpha', 'approx', 'angle',
+              'gamma', 'geq', 'delta', 'div', 'dot',
+              'pi', 'pm', 'partial', 'perp', 'prod',
+              'vec', 'mu', 'omega', 'kappa', 'zeta', 'xi', 'eta', 'epsilon',
+              'mathrm', 'mathbf', 'overline', 'hat', 'infty',
+              'neq', 'nu', 'neg', 'nabla', 'notin',
+            ];
+            const matchedCmd = knownLatexCmds.find(lc => afterEscapeLetter === lc);
+            if (matchedCmd) {
+              // Broken LaTeX: \ncdot is really \cdot with stray \n
+              // Emit \\cdot and skip past the entire broken sequence
+              result += '\\\\' + matchedCmd;
+              i += 2 + matchedCmd.length; // skip \n + matched command letters
+              continue;
+            }
           }
         }
 
@@ -301,6 +331,10 @@ function fixTextWrappedLatex(text: string): string {
   for (const op of operators) {
     text = text.replace(new RegExp(`${BS}text\\{${BS}${op}\\}`, 'g'), `\\${op}`);
   }
+  // Also \text{cdot} → \cdot (AI drops the backslash inside \text{})
+  for (const op of operators) {
+    text = text.replace(new RegExp(`${BS}text\\{${op}\\}`, 'g'), `\\${op}`);
+  }
 
   // --- General catch-all: \text{\commandArgs} → \command Args ---
   // Handles cases like \text{\angleCDB} → \angle CDB, \text{\overlineAB} → \overline AB
@@ -308,6 +342,21 @@ function fixTextWrappedLatex(text: string): string {
   text = text.replace(new RegExp(`${BS}text\\{(${BS}[a-z]+)([A-Z][^}]*)\\}`, 'g'), (_, cmd, rest) => {
     const normalizedCmd = cmd.replace(/^\\\\/, '\\');
     return `${normalizedCmd} ${rest}`;
+  });
+
+  // --- \text{x} → x for single-letter variables (Phase 2 wraps variables in \text{}) ---
+  // In math mode, single letters should be italic (default), not upright (\text{}).
+  // Handles function names (f, g, h), variables (x, y, n), and points (A, B, C).
+  text = text.replace(/\\text\{([a-zA-Z])\}/g, '$1');
+
+  // --- \rightarrow{X} → \vec{X} for vector notation ---
+  // Phase 2 uses \rightarrow{F} instead of \vec{F} for vector arrows
+  text = text.replace(/\\rightarrow\{([^}]*)\}/g, '\\vec{$1}');
+
+  // --- \$(...$\) → $...$ fix malformed math delimiters ---
+  // Phase 2 sometimes mangles $\frac{1}{3}$ into \$(\frac{1}{3}$\)
+  text = text.replace(/\\\$\(([^$]*)\$\\\)/g, (_, content) => {
+    return `$${content}$`;
   });
 
   // --- \$ inside math → move dollar sign outside math ---
@@ -327,6 +376,10 @@ function fixTextWrappedLatex(text: string): string {
   // --- \sqrt(X) → \sqrt{X} (Phase 2 sometimes uses parens instead of braces) ---
   // Match \sqrt( then balanced content until )
   text = text.replace(/\\sqrt\(([^)]*)\)/g, '\\sqrt{$1}');
+
+  // --- \textdollar → \$ (Phase 2 uses \textdollar for dollar signs) ---
+  text = text.replace(/\\text\{\\textdollar\}/g, '\\$');
+  text = text.replace(/\\textdollar/g, '\\$');
 
   // --- \times → \cdot (Phase 2 converts \cdot to \times; Mathpix never uses \times) ---
   text = text.replace(/\\times/g, '\\cdot');
@@ -562,11 +615,83 @@ function convertUnicodeSegment(text: string): string {
 }
 
 /**
+ * Convert LaTeX tabular content (between \begin and \end) to pipe-separated rows.
+ */
+function convertTabularContent(content: string): string {
+  let cleaned = content;
+  // Remove \hline
+  cleaned = cleaned.replace(/\\hline/g, '');
+  // Remove \cline{...}
+  cleaned = cleaned.replace(/\\cline\s*\{[^}]*\}/g, '');
+  // Convert \multicolumn{n}{spec}{text} → text
+  cleaned = cleaned.replace(/\\multicolumn\{[^}]*\}\{[^}]*\}\{\s*([^}]*)\s*\}/g, '$1');
+
+  // Split by \\ into rows
+  const rows = cleaned.split(/\\\\/);
+  const processedRows = rows
+    .map(row => {
+      const cells = row.split('&').map(cell => cell.trim()).filter(Boolean);
+      if (cells.length === 0) return '';
+      return cells.join(' | ');
+    })
+    .filter(row => row.length > 0);
+
+  return '\n' + processedRows.join('\n') + '\n';
+}
+
+/**
+ * Clean structural LaTeX that can't be rendered by MathLive.
+ * Converts tabular environments to readable text, section headers to plain text,
+ * and fixes currency $ patterns.
+ * Applied BEFORE math processing so these don't interfere with $...$ parsing.
+ */
+function cleanStructuralLatex(text: string): string {
+  if (!text) return text;
+
+  // 1. Tables: If any \begin{tabular} survived to here (Phase 1.6 should have converted them
+  //    to images), convert to pipe-separated text as fallback
+  text = text.replace(
+    /\\begin\{(?:tabular|tabularx|array|longtable)\}(?:\{[^}]*\})?\s*([\s\S]*?)\\end\{(?:tabular|tabularx|array|longtable)\}/g,
+    (_, content) => convertTabularContent(content)
+  );
+
+  // 2. \section*{title} / \subsection*{title} → title
+  text = text.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1');
+
+  // 3. Fix currency $\n$ NUMBER$ → \$NUMBER
+  // Phase 2 breaks Chilean peso "$300.000" into "$\n$ 300000$"
+  // After JSON.parse the \n becomes a real newline, so pattern is: $ + whitespace + $ + digits + $
+  text = text.replace(/\$\s*\n\s*\$\s*(\d[\d.,\s]*)\$/g, '\\$$1');
+
+  // 4. Fix \$ NUMBER in plain text (Mathpix's escaped dollar for currency)
+  // \$ 30 is fine as stored format — frontend will render \$ as $
+
+  return text;
+}
+
+/**
  * Post-process text from AI to fix Unicode math symbols and ensure proper LaTeX delimiters.
  * This operates on a single text field (question_text, option, etc.)
  */
 export function postProcessMathText(text: string): string {
   if (!text) return text;
+
+  // Step -3: Clean structural LaTeX (tables, sections, currency patterns)
+  // Must run before all math processing so \begin{tabular}, \section*, $\n$ don't
+  // interfere with $...$ delimiter parsing
+  text = cleanStructuralLatex(text);
+
+  // Step -2: Fix mis-encoded LaTeX commands where JSON escape consumed the backslash.
+  // AI sometimes writes \ncdot in JSON where \n is a JSON escape → newline(0x0A) + "cdot".
+  // Also handles tab+cdot, CR+cdot, etc. [\n\r\t\f\x08] = all JSON escape control chars.
+  text = text.replace(/[\n\r\t\f\x08]cdot\b/g, '\\cdot');
+  text = text.replace(/[\n\r\t\f\x08]cdots\b/g, '\\cdots');
+  text = text.replace(/[\n\r\t\f\x08]sqrt(?=[{\s(])/g, '\\sqrt');
+
+  // Step -1: Fix literal \n (two chars: backslash + n) → actual newline
+  // fixLatexInJsonString bug: sometimes double-escapes \n making it literal
+  // Negative lookahead: don't replace \neq, \nabla, \nu, etc.
+  text = text.replace(/\\n(?![a-zA-Z])/g, '\n');
 
   // Step 0: Repair control characters from JSON.parse escape destruction
   // e.g., form-feed + "rac" → \frac, tab + "imes" → \times
@@ -581,10 +706,22 @@ export function postProcessMathText(text: string): string {
   text = fixTextWrappedLatex(text);
 
   // Step 1: Fix bare LaTeX commands (without $ delimiters)
-  // If there's LaTeX but no $, the AI forgot the delimiters
-  if (LATEX_CMD_PATTERN.test(text) && !text.includes('$')) {
-    // Wrap segments containing LaTeX commands in $...$
-    text = wrapBareLatexInDollars(text);
+  // Check ALL plain-text segments (outside $...$) for bare LaTeX commands
+  // Previously only ran when there were NO $ at all, which missed cases like:
+  //   "Para calcular $x$, se usa 2 \cdot 3" → \cdot stayed bare
+  if (LATEX_CMD_PATTERN.test(text)) {
+    if (!text.includes('$')) {
+      // No $ at all → wrap the whole text
+      text = wrapBareLatexInDollars(text);
+    } else {
+      // Has some $...$ but might also have bare LaTeX outside them
+      text = processTextSegments(text, (segment) => {
+        if (LATEX_CMD_PATTERN.test(segment)) {
+          return wrapBareLatexInDollars(segment);
+        }
+        return segment;
+      });
+    }
   }
 
   // Step 2: Convert Unicode math symbols INSIDE existing $...$ to LaTeX
@@ -677,11 +814,16 @@ function convertUnicodeInsideDollars(text: string): string {
 function wrapBareLatexInDollars(text: string): string {
   // Pattern: find runs of text containing LaTeX commands
   // Match a LaTeX command and its surrounding math content
-  const latexRunPattern = /(?:(?:\\(?:frac|sqrt|cdot|times|div|pm|neq|geq|leq|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|hat|bar|infty|sim|approx|left|right)\b(?:\{[^}]*\})*(?:\[[^\]]*\])*)|[\d\s\+\-=\(\)\[\]\{\},./^_]|[a-zA-Z](?=[\s]*(?:\\|[\^_])))+/g;
+  // The [a-zA-Z] part uses negative lookbehind (?<![a-zA-Z]) so it only matches
+  // standalone variables (x, n) not letters inside words (the "i" in "Si")
+  const latexRunPattern = /(?:(?:\\(?:frac|sqrt|cdot|times|div|pm|neq|geq|leq|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|hat|bar|infty|sim|approx|left|right)\b(?:\{[^}]*\})*(?:\[[^\]]*\])*)|[\d\s\+\-=\(\)\[\]\{\},./^_]|(?<![a-zA-Z])[a-zA-Z](?=[\s]*(?:\\|[\^_])))+/g;
 
   return text.replace(latexRunPattern, (match) => {
     if (LATEX_CMD_PATTERN.test(match)) {
-      return `$${match.trim()}$`;
+      // Preserve leading/trailing whitespace around the $...$ block
+      const lead = match.match(/^\s*/)?.[0] || '';
+      const trail = match.match(/\s*$/)?.[0] || '';
+      return `${lead}$${match.trim()}$${trail}`;
     }
     return match;
   });

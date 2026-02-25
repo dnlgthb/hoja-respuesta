@@ -38,6 +38,24 @@ export const upload = multer({
   },
 });
 
+// Filtro: imágenes
+const imageFilter = (req: any, file: Express.Multer.File, cb: any) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten archivos de imagen'), false);
+  }
+};
+
+// Multer para imágenes
+export const uploadImage = multer({
+  storage: storage,
+  fileFilter: imageFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // Máximo 5MB
+  },
+});
+
 // Multer para Excel/CSV
 export const uploadSpreadsheet = multer({
   storage: storage,

@@ -363,13 +363,17 @@ export class TestsService {
     // Verificar que la prueba pertenece al profesor
     const test = await this.getTestById(testId, teacherId);
 
+    // Release DB connection before long extraction — prevents Neon from
+    // killing the idle connection and firing unhandled errors mid-extraction
+    await prisma.$disconnect().catch(() => {});
+
     // Analyze PDF: use Mathpix if credentials available, otherwise fallback to GPT-4o vision
     const useMathpix = !!(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
     let questions: any[];
 
     if (useMathpix) {
       console.log('📄 Using Mathpix OCR for PDF analysis');
-      questions = await analyzeDocumentMathpix(fileBuffer, onProgress);
+      questions = await analyzeDocumentMathpix(fileBuffer, onProgress, testId);
     } else {
       console.log('📄 Using GPT-4o Vision for PDF analysis (Mathpix not configured)');
       const chunks = await splitPdfIntoChunks(fileBuffer, 5);
@@ -383,10 +387,17 @@ export class TestsService {
       throw new Error('No se pudieron detectar preguntas en el PDF');
     }
 
+    // Reconnect Prisma with a fresh connection to save results
+    await prisma.$connect();
+
     // Eliminar preguntas existentes (si las hay)
     await prisma.question.deleteMany({
       where: { test_id: testId },
     });
+
+    // Strip null bytes from strings — PostgreSQL rejects 0x00 in UTF-8 text
+    const sanitize = (s: string | null | undefined): string | null =>
+      s ? s.replace(/\0/g, '') : s ?? null;
 
     // Crear preguntas secuencialmente para evitar race conditions
     const createdQuestions = [];
@@ -400,15 +411,16 @@ export class TestsService {
           question_number: i + 1, // Orden secuencial para ordenamiento
           question_label: questionLabel, // Nomenclatura visible (I.a, II.b, etc.)
           type: q.type as QuestionType,
-          question_text: q.text,
+          question_text: sanitize(q.text) || '',
           points: q.points || 1,
-          options: q.options || null,
-          correct_answer: q.correct_answer || null,
+          options: q.options ? q.options.map((o: string) => sanitize(o) || o) : null,
+          correct_answer: sanitize(q.correct_answer),
           correction_criteria: null,
-          context: q.context || null,
+          context: sanitize(q.context),
           has_image: q.has_image || false,
-          image_description: q.image_description || null,
+          image_description: sanitize(q.image_description),
           image_page: q.image_page != null ? parseInt(String(q.image_page), 10) || null : null,
+          image_url: sanitize(q.image_url),
         },
       });
       createdQuestions.push(created);
@@ -1316,6 +1328,7 @@ export class TestsService {
     updates: {
       question_label?: string;
       question_text?: string;
+      context?: string | null;
       type?: QuestionType;
       points?: number;
       correct_answer?: string;
@@ -1323,6 +1336,9 @@ export class TestsService {
       correction_criteria?: string;
       require_units?: boolean;
       unit_penalty?: number;
+      image_url?: string | null;
+      has_image?: boolean;
+      image_description?: string | null;
     }
   ) {
     // Verificar que la prueba pertenezca al profesor

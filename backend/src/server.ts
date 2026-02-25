@@ -16,6 +16,12 @@ app.listen(PORT, () => {
   console.log('');
 });
 
+// Prevent unhandled rejections from crashing the server
+// (Neon/Prisma fires async errors when idle connections are killed)
+process.on('unhandledRejection', (reason) => {
+  console.warn('⚠️ Unhandled rejection (non-fatal):', reason instanceof Error ? reason.message : reason);
+});
+
 // Manejo de cierre graceful
 process.on('SIGINT', async () => {
   console.log('\n👋 Cerrando servidor...');

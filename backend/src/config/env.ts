@@ -30,6 +30,7 @@ export const env = {
   MATHPIX_APP_KEY: process.env.MATHPIX_APP_KEY || '',
   SUPABASE_URL: process.env.SUPABASE_URL!,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
+  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
   RESEND_API_KEY: process.env.RESEND_API_KEY!,
   PORT: parseInt(process.env.PORT || '3001'),
   NODE_ENV: process.env.NODE_ENV || 'development',

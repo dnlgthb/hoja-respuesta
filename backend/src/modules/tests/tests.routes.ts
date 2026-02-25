@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { testsController } from './tests.controller';
 import { authMiddleware } from '../auth/auth.middleware';
-import { upload } from '../../config/multer';
+import { upload, uploadImage } from '../../config/multer';
 
 const router = Router();
 
@@ -27,6 +27,9 @@ router.delete('/:id/questions/:questionId', (req, res) => testsController.delete
 router.post('/:id/upload-pdf', upload.single('pdf'), (req, res) => testsController.uploadPDF(req, res));
 router.post('/:id/analyze-pdf', upload.single('pdf'), (req, res) => testsController.analyzePDF(req, res));
 router.post('/:id/analyze-rubric', upload.single('pdf'), (req, res) => testsController.analyzeRubric(req, res));
+
+// Upload de imagen para pregunta
+router.post('/:id/upload-image', uploadImage.single('image'), (req, res) => testsController.uploadQuestionImage(req, res));
 
 // Activar prueba (generar código)
 router.post('/:id/activate', (req, res) => testsController.activateTest(req, res));

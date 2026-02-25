@@ -1,12 +1,16 @@
 // Cliente de OpenAI - Para análisis de documentos con IA
 import OpenAI from 'openai';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { env } from './env';
 import { postProcessQuestion, fixLatexInJsonString } from '../utils/mathPostProcess';
+import { uploadImage } from './storage';
 
 // Crear cliente de OpenAI con timeout generoso para PDFs grandes
 const openai = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
-  timeout: 180_000, // 3 minutos por llamada
+  timeout: 180_000, // 3 min per call — some chunks take 100s+
 });
 
 // =============================================
@@ -26,7 +30,7 @@ function getMathpixHeaders(): Record<string, string> {
  * Mathpix is specialized in math OCR — exponentes, fracciones, raíces.
  * Flow: POST PDF → poll status → download .mmd (Mathpix Markdown)
  */
-async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<string> {
+async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<{ text: string; pdfId: string }> {
   const startTime = Date.now();
   console.log(`  🔢 Mathpix OCR: sending PDF (${(pdfBuffer.length / 1024 / 1024).toFixed(1)}MB)...`);
 
@@ -37,6 +41,8 @@ async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<string> {
     math_inline_delimiters: ['$', '$'],
     math_display_delimiters: ['$$', '$$'],
     rm_spaces: true,
+    enable_tables_fallback: true,
+    include_page_info: true,
   }));
 
   const uploadResponse = await fetch(MATHPIX_API_URL, {
@@ -112,7 +118,52 @@ async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<string> {
   const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`  📄 Mathpix OCR done: ${lines} lines, ${(mmdText.length / 1024).toFixed(1)}KB (${totalElapsed}s)`);
 
-  return mmdText;
+  return { text: mmdText, pdfId: pdf_id };
+}
+
+/**
+ * Build a map from question number → PDF page number using OCR text markers.
+ * When Mathpix is called with include_page_info: true, the .mmd contains
+ * page footer markers like "- N -" (centered, on their own line) at the end of page N.
+ * Content AFTER "- N -" is on page N+1.
+ */
+function buildPageMapFromOcr(ocrText: string): Map<number, number> {
+  const lines = ocrText.split('\n');
+  const questionToPage = new Map<number, number>();
+
+  // First pass: find all page footer positions and build a line→page map
+  // Footer "- N -" marks the end of page N; content after it is on page N+1.
+  const pageBreaks: Array<{ lineIdx: number; pageAfter: number }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const pageFooter = lines[i].trim().match(/^-\s*(\d+)\s*-$/);
+    if (pageFooter) {
+      pageBreaks.push({ lineIdx: i, pageAfter: parseInt(pageFooter[1], 10) + 1 });
+    }
+  }
+
+  // Second pass: for each question, find which page it's on
+  for (let i = 0; i < lines.length; i++) {
+    const questionStart = lines[i].match(/^(\d+)\.\s/);
+    if (!questionStart) continue;
+
+    const qNum = parseInt(questionStart[1], 10);
+    if (qNum < 1 || qNum > 100) continue;
+    // Use LAST occurrence: cover page instructions also have "1.", "2.", etc.
+    // Real questions come after instructions, so the last match wins.
+
+    // Find the last page break before this line
+    let page = 1; // default: before any footer
+    for (const pb of pageBreaks) {
+      if (pb.lineIdx < i) {
+        page = pb.pageAfter;
+      } else {
+        break;
+      }
+    }
+    questionToPage.set(qNum, page);
+  }
+
+  return questionToPage;
 }
 
 /**
@@ -277,11 +328,20 @@ VALIDACIÓN DE OPCIONES:
 - NO inventes opciones que no estén en la transcripción
 
 PREGUNTAS CON IMÁGENES:
+- Si la transcripción contiene ![](URL) o ![caption](URL) antes o dentro de una pregunta, pon has_image: true, la URL en image_url, y una descripción breve en image_description
+- Si hay MÚLTIPLES imágenes para una pregunta (ej: ![Caja 1](URL1) ![Caja 2](URL2)), usa la primera URL en image_url y pon TODAS las URLs adicionales en el campo "text" como ![caption](URL)
+- Si las opciones son imágenes (ej: ![B)](URL)), mantén la sintaxis ![caption](URL) dentro de las opciones
 - Si la transcripción indica [Imagen: ...], pon has_image: true y la descripción en image_description
-- Si las opciones son imágenes descritas, inclúyelas como texto descriptivo
+- NO incluyas la PRIMERA ![](URL) dentro de "text" — extráela al campo image_url
+- FIGURAS/CARTELES SIN IMAGEN: Si el texto dice "En la figura", "el cartel", "la imagen adjunta" pero NO hay ![](URL), el OCR probablemente extrajo la figura como texto parcial. En ese caso pon has_image: true y en image_description escribe "[Imagen no extraída por OCR - verificar en PDF original]". Incluye todo el texto extraído del cartel/figura en "context".
 
-PREGUNTAS ANIDADAS/COMPUESTAS:
+TEXTO INTRODUCTORIO Y CONTEXTO:
+- Si hay texto introductorio/escenario ANTES de la pregunta real (ej: "Un diario tiene una colilla recortable..."), ponlo en "context"
+- "text" debe contener SOLO la pregunta directa (la oración interrogativa o instrucción)
 - Si hay un enunciado general para varias sub-preguntas, ponlo en "context" de cada sub-pregunta
+- IMPORTANTE: Si hay tablas (\\begin{tabular}, \\begin{array}, \\begin{table}), listas, o datos estructurados entre el texto introductorio y la pregunta, INCLÚYELOS COMPLETOS en "context" — NO los omitas
+- Ejemplo: context="En la siguiente tabla se presentan las fechas:\n\n| Hecho | Año |\n|---|---|\n| Gran Pirámide | -2560 |\n| Cleopatra | -69 |", text="¿Cuántos años pasaron desde...?"
+- Ejemplo: context="Considera la siguiente recta numérica:", text="¿Cuál de los siguientes procedimientos representa...?"
 
 Responde ÚNICAMENTE con JSON válido:
 {
@@ -296,7 +356,8 @@ Responde ÚNICAMENTE con JSON válido:
       "points": 1,
       "has_image": false,
       "image_description": null,
-      "image_page": null
+      "image_page": null,
+      "image_url": null
     }
   ]
 }
@@ -376,22 +437,32 @@ async function structureTranscription(
   const startTime = Date.now();
   console.log(`  🏗️ Phase 2 (Structure): parsing transcription into JSON — modelo: ${env.OPENAI_MODEL}`);
 
-  const completion = await openai.chat.completions.create({
-    model: env.OPENAI_MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: STRUCTURE_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `Aquí está la transcripción fiel (OCR) de un fragmento de prueba educativa (${chunkInfo}). Estructura las preguntas en formato JSON. COPIA las expresiones matemáticas EXACTAMENTE como están en la transcripción, sin modificar nada.\n\nTRANSCRIPCIÓN:\n${transcription}`,
-      },
-    ],
-    temperature: 0.0,
-    max_tokens: 16000,
-    response_format: { type: 'json_object' },
-  });
+  // Hard abort after 150s — OpenAI sometimes accepts the request but hangs
+  // indefinitely (SDK timeout only covers connection, not slow responses)
+  const abortController = new AbortController();
+  const abortTimer = setTimeout(() => abortController.abort(), 150_000);
+
+  let completion;
+  try {
+    completion = await openai.chat.completions.create({
+      model: env.OPENAI_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: STRUCTURE_SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: `Aquí está la transcripción fiel (OCR) de un fragmento de prueba educativa (${chunkInfo}). Estructura las preguntas en formato JSON. COPIA las expresiones matemáticas EXACTAMENTE como están en la transcripción, sin modificar nada.\n\nTRANSCRIPCIÓN:\n${transcription}`,
+        },
+      ],
+      temperature: 0.0,
+      max_tokens: 16000,
+      response_format: { type: 'json_object' },
+    }, { signal: abortController.signal });
+  } finally {
+    clearTimeout(abortTimer);
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const responseText = completion.choices[0].message.content || '{}';
@@ -509,6 +580,529 @@ export async function analyzeDocument(
 }
 
 /**
+ * Render a LaTeX table to a PNG image using QuickLaTeX API.
+ * QuickLaTeX is a free service that supports full LaTeX including tabular, multirow, etc.
+ * @param latexCode - Raw LaTeX code (e.g., \begin{tabular}...\end{tabular})
+ * @returns PNG image as Buffer, or null if rendering failed
+ */
+async function renderLatexTableToImage(latexCode: string): Promise<{ buffer: Buffer; url: string } | null> {
+  try {
+    // Pre-process LaTeX to fix common Mathpix formatting issues
+    let cleaned = latexCode;
+
+    // Fix \cline { 2 - 2 } → \cline{2-2} (remove spaces inside braces)
+    cleaned = cleaned.replace(/\\cline\s*\{\s*(\d+)\s*-\s*(\d+)\s*\}/g, '\\cline{$1-$2}');
+
+    // Wrap in a minimal LaTeX document fragment with common packages
+    const preamble = '\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{multirow}\n\\usepackage{array}';
+
+    // Build body manually with encodeURIComponent — URLSearchParams encodes
+    // spaces as '+' which QuickLaTeX renders as literal '+' characters
+    const body = [
+      `formula=${encodeURIComponent(cleaned)}`,
+      `fsize=17px`,
+      `fcolor=000000`,
+      `mode=0`,
+      `out=1`,
+      `remhost=quicklatex.com`,
+      `preamble=${encodeURIComponent(preamble)}`,
+    ].join('&');
+
+    const response = await fetch('https://quicklatex.com/latex3.f', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+
+    const text = await response.text();
+    // QuickLaTeX returns: status\r\nurl width height depth\r\n...
+    const lines = text.trim().split('\n');
+    const status = lines[0]?.trim();
+
+    if (status !== '0') {
+      console.warn(`  ⚠️ QuickLaTeX render failed (status=${status}): ${lines.slice(1).join(' ').substring(0, 200)}`);
+      return null;
+    }
+
+    // Second line: URL width height depth
+    const parts = lines[1]?.trim().split(/\s+/);
+    const imageUrl = parts?.[0];
+    if (!imageUrl || !imageUrl.startsWith('http')) {
+      console.warn(`  ⚠️ QuickLaTeX returned invalid URL: ${lines[1]}`);
+      return null;
+    }
+
+    // Download the rendered image
+    const imgResponse = await fetch(imageUrl);
+    if (!imgResponse.ok) {
+      console.warn(`  ⚠️ Failed to download QuickLaTeX image: ${imgResponse.status}`);
+      return null;
+    }
+
+    return { buffer: Buffer.from(await imgResponse.arrayBuffer()), url: imageUrl };
+  } catch (err) {
+    console.warn(`  ⚠️ QuickLaTeX error: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Convert \begin{tabular}...\end{tabular} blocks in Mathpix .mmd text to images.
+ * Tables are rendered to PNG via QuickLaTeX, uploaded to Supabase, and replaced
+ * with ![table](supabase_url) markdown in the text.
+ * This runs BEFORE Phase 2 so the AI sees images instead of raw LaTeX tables.
+ */
+async function convertTablesToImages(mmdText: string, testId: string): Promise<string> {
+  // Match tabular-like environments, handling nesting by counting begin/end pairs
+  const envNames = '(?:tabular|tabularx|array|longtable)';
+  const matches: { text: string; index: number }[] = [];
+  const beginRe = new RegExp(`\\\\begin\\{${envNames}\\}`, 'g');
+  let m: RegExpExecArray | null;
+
+  while ((m = beginRe.exec(mmdText)) !== null) {
+    const startIdx = m.index;
+    // Count nesting depth to find the matching \end
+    let depth = 1;
+    let pos = m.index + m[0].length;
+    const beginInner = new RegExp(`\\\\begin\\{${envNames}\\}`, 'g');
+    const endInner = new RegExp(`\\\\end\\{${envNames}\\}`, 'g');
+    let endPos = -1;
+
+    while (depth > 0 && pos < mmdText.length) {
+      beginInner.lastIndex = pos;
+      endInner.lastIndex = pos;
+      const nextBegin = beginInner.exec(mmdText);
+      const nextEnd = endInner.exec(mmdText);
+      if (!nextEnd) break; // no closing tag found
+      if (nextBegin && nextBegin.index < nextEnd.index) {
+        depth++;
+        pos = nextBegin.index + nextBegin[0].length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          endPos = nextEnd.index + nextEnd[0].length;
+        }
+        pos = nextEnd.index + nextEnd[0].length;
+      }
+    }
+
+    if (endPos !== -1) {
+      const tableText = mmdText.substring(startIdx, endPos);
+      matches.push({ text: tableText, index: startIdx });
+      // Skip past this table to avoid matching inner tables again
+      beginRe.lastIndex = endPos;
+    }
+  }
+
+  if (matches.length === 0) {
+    console.log('  📊 No LaTeX tables found in .mmd text');
+    return mmdText;
+  }
+
+  console.log(`  📊 Found ${matches.length} LaTeX tables to convert to images...`);
+  let result = mmdText;
+  let succeeded = 0;
+
+  for (const match of matches) {
+    const fullMatch = match.text;
+
+    // Render the table to an image
+    const renderResult = await renderLatexTableToImage(fullMatch);
+    if (!renderResult) {
+      console.warn(`  ⚠️ Skipping table (render failed), keeping as text`);
+      continue;
+    }
+
+    // Try uploading to Supabase, fall back to QuickLaTeX URL
+    let imageUrl = renderResult.url; // fallback
+    try {
+      const hash = crypto.createHash('md5').update(fullMatch).digest('hex').slice(0, 12);
+      const filePath = `img_${testId}_tbl_${hash}`;
+      imageUrl = await uploadImage(renderResult.buffer, filePath, 'image/png');
+    } catch (err) {
+      console.warn(`  ⚠️ Supabase upload failed, using QuickLaTeX URL: ${(err as Error).message}`);
+    }
+
+    // Replace the LaTeX table with an image reference
+    result = result.replace(fullMatch, `\n![tabla](${imageUrl})\n`);
+    succeeded++;
+  }
+
+  console.log(`  📊 Converted ${succeeded}/${matches.length} tables to images`);
+  return result;
+}
+
+/**
+ * Normalize Mathpix \begin{figure}...\end{figure} blocks into Markdown ![caption](URL).
+ * Mathpix outputs images in two formats:
+ *   1. Markdown: ![](URL) — already handled
+ *   2. LaTeX: \begin{figure}\includegraphics[...]{URL}\caption{X}\end{figure} — needs normalization
+ * This must run BEFORE extractAndRehostImages so the unified ![](URL) regex catches everything.
+ */
+function normalizeMathpixFigures(mmdText: string): string {
+  // Step 1: Match \begin{figure}...\end{figure} blocks (caption before or after \includegraphics)
+  const figureRegex = /\\begin\{figure\}[\s\S]*?\\end\{figure\}/g;
+  let figureCount = 0;
+
+  let result = mmdText.replace(figureRegex, (block) => {
+    // Extract URL from \includegraphics[...]{URL}
+    const urlMatch = block.match(/\\includegraphics\[[^\]]*\]\{(https?:\/\/[^}]+)\}/);
+    if (!urlMatch) return block; // No URL found, leave as-is
+
+    // Extract caption from \caption{...}
+    const captionMatch = block.match(/\\caption\{([^}]*)\}/);
+    const caption = captionMatch ? captionMatch[1].trim() : '';
+
+    figureCount++;
+    return `![${caption}](${urlMatch[1]})`;
+  });
+
+  // Step 2: Convert standalone \includegraphics[...]{url} outside of figure blocks
+  // These are missed by the figure block regex above
+  const standaloneRegex = /\\includegraphics\[([^\]]*)\]\{(https?:\/\/[^}]+)\}/g;
+  let standaloneCount = 0;
+
+  result = result.replace(standaloneRegex, (_match, _attrs, url) => {
+    standaloneCount++;
+    return `![](${url})`;
+  });
+
+  if (figureCount > 0 || standaloneCount > 0) {
+    console.log(`  🔄 Normalized ${figureCount} figure blocks + ${standaloneCount} standalone \\includegraphics → ![](URL)`);
+  }
+  return result;
+}
+
+/**
+ * Extract Mathpix CDN image URLs from .mmd text, download them,
+ * upload to Supabase Storage (permanent), and replace URLs in the text.
+ * Mathpix CDN URLs expire after ~30 days, so we must re-host them.
+ * @param mmdText - Raw Mathpix Markdown text with ![](cdn.mathpix.com/...) refs
+ * @param testId - Test ID for organizing images in storage
+ * @returns Text with Mathpix URLs replaced by Supabase URLs
+ */
+async function extractAndRehostImages(mmdText: string, testId: string): Promise<string> {
+  // Match both Markdown ![alt](url) AND LaTeX \includegraphics[...]{url} formats
+  // Mathpix .mmd uses both syntaxes depending on context
+  const mdImageRegex = /!\[([^\]]*)\]\((https:\/\/cdn\.mathpix\.com\/cropped\/[^)]+)\)/g;
+  const latexImageRegex = /\\includegraphics\[([^\]]*)\]\{(https:\/\/cdn\.mathpix\.com\/cropped\/[^}]+)\}/g;
+
+  // Collect all matches with their format type
+  type ImageMatch = { fullMatch: string; altText: string; url: string };
+  const allMatches: ImageMatch[] = [];
+
+  for (const m of mmdText.matchAll(mdImageRegex)) {
+    allMatches.push({ fullMatch: m[0], altText: m[1], url: m[2] });
+  }
+  for (const m of mmdText.matchAll(latexImageRegex)) {
+    allMatches.push({ fullMatch: m[0], altText: '', url: m[2] });
+  }
+
+  if (allMatches.length === 0) {
+    console.log('  🖼️ No Mathpix images found in .mmd text');
+    return mmdText;
+  }
+
+  console.log(`  🖼️ Found ${allMatches.length} Mathpix images to re-host...`);
+  let result = mmdText;
+  let succeeded = 0;
+
+  // Process images concurrently (max 5 at a time)
+  const CONCURRENCY = 5;
+  for (let i = 0; i < allMatches.length; i += CONCURRENCY) {
+    const batch = allMatches.slice(i, i + CONCURRENCY);
+    const promises = batch.map(async (match) => {
+      try {
+        // Download image from Mathpix CDN
+        const response = await fetch(match.url);
+        if (!response.ok) {
+          console.warn(`  ⚠️ Failed to download image: ${response.status} ${match.url.slice(0, 80)}...`);
+          return null;
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        // Determine content type from URL
+        const isJpg = match.url.includes('.jpg') || match.url.includes('.jpeg');
+        const contentType = isJpg ? 'image/jpeg' : 'image/png';
+
+        // Generate a short, unique filename using a hash of the FULL URL
+        // (including crop params) so different crops of the same page get distinct files
+        // Short names prevent gpt-4o-mini from truncating URLs during Phase 2
+        const urlHash = crypto.createHash('md5').update(match.url).digest('hex').slice(0, 12);
+        const filePath = `img_${testId}_${urlHash}`;
+
+        // Upload to Supabase
+        const supabaseUrl = await uploadImage(buffer, filePath, contentType);
+        return { ...match, supabaseUrl };
+      } catch (err) {
+        console.warn(`  ⚠️ Error re-hosting image: ${(err as Error).message}`);
+        return null;
+      }
+    });
+
+    const results = await Promise.all(promises);
+    for (const r of results) {
+      if (r) {
+        // Replace the original reference with Markdown image syntax
+        result = result.replace(r.fullMatch, `![${r.altText}](${r.supabaseUrl})`);
+        succeeded++;
+      }
+    }
+  }
+
+  console.log(`  🖼️ Re-hosted ${succeeded}/${allMatches.length} images to Supabase`);
+  return result;
+}
+
+// =============================================
+// PHASE 1.3: Composite Figure Detection & Merging
+// =============================================
+
+/** Parsed crop from Mathpix CDN URL */
+interface MathpixCrop {
+  /** Full markdown match, e.g. ![caption](url) */
+  fullMatch: string;
+  /** The CDN URL */
+  url: string;
+  /** Alt/caption text */
+  altText: string;
+  /** Page number from the URL (e.g., "03" from ...-03.jpg) */
+  page: string;
+  /** Crop coordinates from query params */
+  top_left_x: number;
+  top_left_y: number;
+  width: number;
+  height: number;
+  /** Character index in the .mmd text where this match starts */
+  charIndex: number;
+  /** Character index where this match ends */
+  charEnd: number;
+  /** UUID prefix from the URL (e.g., cce1a75b-e160-401f-ad8e-45d053bf00aa) */
+  uuid: string;
+}
+
+/**
+ * Parse all Mathpix CDN image references from .mmd text (after normalizeMathpixFigures).
+ * At this point all images are in ![alt](url) format.
+ * Groups them by page number.
+ */
+function parseMathpixCrops(mmdText: string): Map<string, MathpixCrop[]> {
+  const regex = /!\[([^\]]*)\]\((https:\/\/cdn\.mathpix\.com\/cropped\/([a-f0-9-]+)-(\d+)\.jpg\?([^)]+))\)/g;
+  const byPage = new Map<string, MathpixCrop[]>();
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(mmdText)) !== null) {
+    const [fullMatch, altText, url, uuid, page, queryString] = match;
+    const params = new URLSearchParams(queryString);
+
+    const crop: MathpixCrop = {
+      fullMatch,
+      url,
+      altText,
+      page,
+      uuid,
+      top_left_x: parseInt(params.get('top_left_x') || '0', 10),
+      top_left_y: parseInt(params.get('top_left_y') || '0', 10),
+      width: parseInt(params.get('width') || '0', 10),
+      height: parseInt(params.get('height') || '0', 10),
+      charIndex: match.index,
+      charEnd: match.index + fullMatch.length,
+    };
+
+    const crops = byPage.get(page) || [];
+    crops.push(crop);
+    byPage.set(page, crops);
+  }
+
+  return byPage;
+}
+
+/**
+ * Group crops by Y-range overlap using Union-Find.
+ * Crops that share any vertical overlap are part of the same composite figure.
+ * This is deterministic, free, and instant — unlike GPT-4o Vision.
+ *
+ * Example: Cuadrado mágico has a grid (left, y=1321-1795) + formula (right, y=1364-1410)
+ * + result box (right, y=1528-1604). All 3 overlap with the grid's Y range → merge.
+ *
+ * Counter-example: Sailboat options (A-E) are stacked vertically with large Y gaps → separate.
+ */
+function groupCropsByYOverlap(
+  crops: MathpixCrop[]
+): { compositeGroups: number[][]; separateIndices: number[] } {
+  const n = crops.length;
+  // Union-Find
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(x: number): number {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  }
+  function union(a: number, b: number) {
+    parent[find(a)] = find(b);
+  }
+
+  // Check all pairs for Y-range overlap
+  for (let i = 0; i < n; i++) {
+    const aTop = crops[i].top_left_y;
+    const aBot = aTop + crops[i].height;
+    for (let j = i + 1; j < n; j++) {
+      const bTop = crops[j].top_left_y;
+      const bBot = bTop + crops[j].height;
+      // Overlap if one starts before the other ends
+      if (aTop < bBot && bTop < aBot) {
+        union(i, j);
+      }
+    }
+  }
+
+  // Collect groups
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(i);
+  }
+
+  const compositeGroups: number[][] = [];
+  const separateIndices: number[] = [];
+  for (const members of groups.values()) {
+    if (members.length >= 2) {
+      compositeGroups.push(members);
+    } else {
+      separateIndices.push(members[0]);
+    }
+  }
+
+  return { compositeGroups, separateIndices };
+}
+
+/**
+ * Compute the merged bounding box for a group of crops.
+ * Returns expanded coordinates with padding to capture content between crops.
+ */
+function computeMergedBoundingBox(crops: MathpixCrop[], padding: number = 120): {
+  top_left_x: number;
+  top_left_y: number;
+  width: number;
+  height: number;
+} {
+  const minX = Math.max(0, Math.min(...crops.map(c => c.top_left_x)) - padding);
+  const minY = Math.max(0, Math.min(...crops.map(c => c.top_left_y)) - padding);
+  const maxX = Math.max(...crops.map(c => c.top_left_x + c.width)) + padding;
+  const maxY = Math.max(...crops.map(c => c.top_left_y + c.height)) + padding;
+
+  return {
+    top_left_x: minX,
+    top_left_y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+/**
+ * Phase 1.3: Detect and merge composite figures in Mathpix .mmd text.
+ *
+ * For pages with 2+ image crops, sends the full page image to GPT-4o Vision
+ * to determine which crops belong to the same composite figure.
+ * Merged crops get a single bounding box URL; the .mmd text range
+ * (from first crop to last crop, including interleaved OCR text) is replaced
+ * with a single ![](mergedUrl).
+ *
+ * Must run AFTER normalizeMathpixFigures (Phase 1.25) and BEFORE extractAndRehostImages (Phase 1.5).
+ */
+async function mergeCompositeFigures(mmdText: string): Promise<string> {
+  const byPage = parseMathpixCrops(mmdText);
+
+  // Filter to pages with 2+ crops (only those need composite analysis)
+  const multiCropPages = Array.from(byPage.entries()).filter(([, crops]) => crops.length >= 2);
+
+  if (multiCropPages.length === 0) {
+    console.log('  🧩 No pages with multiple crops — skipping composite detection');
+    return mmdText;
+  }
+
+  console.log(`  🧩 Analyzing ${multiCropPages.length} pages with multiple crops for composites...`);
+
+  // Analyze pages concurrently (they're independent)
+  type Replacement = { startChar: number; endChar: number; newText: string };
+  const allReplacements: Replacement[] = [];
+
+  const analysisPromises = multiCropPages.map(async ([page, crops]) => {
+    try {
+      const firstCrop = crops[0];
+
+      // Use deterministic Y-overlap heuristic instead of GPT-4o Vision
+      const result = groupCropsByYOverlap(crops);
+      console.log(`  🧩 Page ${page}: ${result.compositeGroups.length} composite group(s), ${result.separateIndices.length} separate (Y-overlap heuristic)`);
+
+      // Process each composite group
+      for (const group of result.compositeGroups) {
+        if (group.length < 2) continue; // Single-crop "group" — nothing to merge
+
+        const groupCrops = group.map(i => crops[i]).filter(Boolean);
+        if (groupCrops.length < 2) continue;
+
+        // Compute merged bounding box
+        const merged = computeMergedBoundingBox(groupCrops);
+
+        // Build merged CDN URL using the same UUID and page
+        const mergedUrl = `https://cdn.mathpix.com/cropped/${firstCrop.uuid}-${page}.jpg?height=${merged.height}&width=${merged.width}&top_left_y=${merged.top_left_y}&top_left_x=${merged.top_left_x}`;
+
+        // Find the text range to replace: from start of first crop to end of last crop
+        // Sort group crops by char position
+        const sorted = [...groupCrops].sort((a, b) => a.charIndex - b.charIndex);
+        const rangeStart = sorted[0].charIndex;
+        let rangeEnd = sorted[sorted.length - 1].charEnd;
+
+        // Extend rangeEnd to absorb "orphan" OCR text that Mathpix extracted
+        // from inside the composite image. This text appears after the last crop
+        // but before the actual question text (e.g. "Resultado\nNombre...\nNúmero contact").
+        // Boundaries: next question number, question mark sentence, image, or options.
+        const textAfter = mmdText.slice(rangeEnd);
+        const nextBoundary = textAfter.search(/\n\d+\.\s|\n!\[|\n¿|\n[A-D]\)\s/);
+        if (nextBoundary > 0) {
+          const trailingText = textAfter.slice(0, nextBoundary).trim();
+          // Only absorb if the trailing text is short (< 300 chars) — it's just
+          // form labels / captions that Mathpix OCR'd from inside the image
+          if (trailingText.length > 0 && trailingText.length < 300) {
+            rangeEnd += nextBoundary;
+            console.log(`  🧩 Absorbed ${trailingText.length} chars of orphan OCR text after composite merge`);
+          }
+        }
+
+        allReplacements.push({
+          startChar: rangeStart,
+          endChar: rangeEnd,
+          newText: `![](${mergedUrl})`,
+        });
+
+        console.log(`  🧩 Merged ${groupCrops.length} crops on page ${page} → single ${merged.width}x${merged.height} image`);
+      }
+    } catch (err) {
+      console.warn(`  ⚠️ Composite analysis failed for page ${page}: ${(err as Error).message} — keeping original crops`);
+    }
+  });
+
+  await Promise.all(analysisPromises);
+
+  if (allReplacements.length === 0) {
+    console.log('  🧩 No composite figures detected — text unchanged');
+    return mmdText;
+  }
+
+  // Apply replacements bottom-to-top (highest charIndex first) to preserve indices
+  allReplacements.sort((a, b) => b.startChar - a.startChar);
+
+  let result = mmdText;
+  for (const rep of allReplacements) {
+    result = result.slice(0, rep.startChar) + rep.newText + result.slice(rep.endChar);
+  }
+
+  console.log(`  🧩 Applied ${allReplacements.length} composite merges`);
+  return result;
+}
+
+/**
  * Analyze a PDF using Mathpix for OCR (Phase 1) + gpt-4o-mini for structuring (Phase 2).
  * Mathpix is specialized in math OCR — produces perfect LaTeX for exponents, fractions, roots.
  * @param pdfBuffer - Full PDF as Buffer
@@ -517,53 +1111,189 @@ export async function analyzeDocument(
  */
 export async function analyzeDocumentMathpix(
   pdfBuffer: Buffer,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  testId?: string
 ) {
   // Phase 1: Mathpix OCR — whole PDF at once
   onProgress?.({
     type: 'progress',
     batch: 1,
-    totalBatches: 3,
+    totalBatches: 4,
     pages: 'all',
     questionsFound: 0,
     message: 'Enviando PDF a Mathpix OCR...',
   });
 
-  const fullText = await ocrFullPdfMathpix(pdfBuffer);
+  const { text: rawText, pdfId: mathpixPdfId } = await ocrFullPdfMathpix(pdfBuffer);
+  let fullText = rawText;
+
+  // DEBUG: Dump raw .mmd
+  const debugDir = path.resolve(__dirname, '../../debug-mmd');
+  try { fs.mkdirSync(debugDir, { recursive: true }); } catch {}
+  fs.writeFileSync(path.join(debugDir, '01-raw-ocr.mmd'), fullText, 'utf-8');
+  console.log(`  📝 DEBUG: Saved raw OCR to debug-mmd/01-raw-ocr.mmd`);
+
+  // Phase 1.25: Normalize \begin{figure} LaTeX blocks → ![caption](URL) markdown
+  fullText = normalizeMathpixFigures(fullText);
+
+  // DEBUG: Dump after Phase 1.25
+  fs.writeFileSync(path.join(debugDir, '02-after-normalize.mmd'), fullText, 'utf-8');
+  console.log(`  📝 DEBUG: Saved normalized to debug-mmd/02-after-normalize.mmd`);
+
+  // Phase 1.3: Detect and merge composite figures (before re-hosting, while CDN URLs are active)
+  try {
+    onProgress?.({
+      type: 'progress',
+      batch: 1,
+      totalBatches: 5,
+      pages: 'all',
+      questionsFound: 0,
+      message: 'Detectando figuras compuestas...',
+    });
+    fullText = await mergeCompositeFigures(fullText);
+  } catch (err) {
+    console.warn(`  ⚠️ Phase 1.3 (composite merging) failed: ${(err as Error).message} — continuing with original text`);
+  }
+
+  // DEBUG: Dump after Phase 1.3
+  fs.writeFileSync(path.join(debugDir, '03-after-composite-merge.mmd'), fullText, 'utf-8');
+  console.log(`  📝 DEBUG: Saved after composite merge to debug-mmd/03-after-composite-merge.mmd`);
+
+  // Phase 1.5: Extract images from Mathpix CDN and re-host to Supabase
+  if (testId) {
+    onProgress?.({
+      type: 'progress',
+      batch: 2,
+      totalBatches: 5,
+      pages: 'all',
+      questionsFound: 0,
+      message: 'Re-hosteando imágenes del PDF...',
+    });
+    fullText = await extractAndRehostImages(fullText, testId);
+
+    // Phase 1.6: Convert LaTeX tables to images
+    onProgress?.({
+      type: 'progress',
+      batch: 3,
+      totalBatches: 5,
+      pages: 'all',
+      questionsFound: 0,
+      message: 'Convirtiendo tablas a imágenes...',
+    });
+    fullText = await convertTablesToImages(fullText, testId);
+  }
+
+  // Phase 1.7: Clean structural LaTeX before Phase 2
+  // Remove \section*{} wrappers so Phase 2 sees cleaner text
+  fullText = fullText.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1');
+  // Remove page footer markers "- N -" added by include_page_info (buildPageMapFromOcr uses rawText)
+  fullText = fullText.replace(/^-\s*\d+\s*-$/gm, '');
+
+  // DEBUG: dump final text before splitting
+  try {
+    fs.writeFileSync(path.join(debugDir, '04-final-before-split.mmd'), fullText, 'utf-8');
+    console.log(`  📝 DEBUG: Saved final text to debug-mmd/04-final-before-split.mmd`);
+  } catch {}
 
   // Split text into chunks for Phase 2
   const textChunks = splitMathpixTextIntoChunks(fullText, 120);
   console.log(`📄 Mathpix text split into ${textChunks.length} chunks for structuring`);
 
-  // Phase 2: Structure each text chunk with gpt-4o-mini
-  const CONCURRENCY = 2;
+  // DEBUG: dump individual chunks
+  try {
+    textChunks.forEach((c, i) => {
+      fs.writeFileSync(path.join(debugDir, `chunk-${i+1}.txt`), c, 'utf-8');
+      console.log(`  📝 DEBUG: chunk-${i+1}.txt: ${c.split('\n').length} lines, ${c.length} chars`);
+    });
+  } catch {}
+
+  // Phase 2: Structure each text chunk with gpt-4o-mini (sequentially to avoid OpenAI rate issues)
   const allQuestions: any[] = [];
 
-  for (let i = 0; i < textChunks.length; i += CONCURRENCY) {
-    const batch = textChunks.slice(i, i + CONCURRENCY);
-    const batchPromises = batch.map((chunk, j) => {
-      const idx = i + j;
-      const chunkInfo = `texto chunk ${idx + 1} de ${textChunks.length}`;
-      console.log(`  🔄 Structure ${idx + 1}/${textChunks.length}...`);
-      return structureTranscription(chunk, chunkInfo).then(questions => {
-        console.log(`  ✅ Structure ${idx + 1}: ${questions.length} preguntas`);
-        return { idx, questions };
-      });
-    });
+  for (let i = 0; i < textChunks.length; i++) {
+    const chunk = textChunks[i];
+    const chunkInfo = `texto chunk ${i + 1} de ${textChunks.length}`;
+    console.log(`  🔄 Structure ${i + 1}/${textChunks.length}...`);
+
+    let questions: any[] | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        questions = await structureTranscription(chunk, chunkInfo);
+        console.log(`  ✅ Structure ${i + 1}${attempt > 0 ? ` (retry ${attempt})` : ''}: ${questions.length} preguntas`);
+        break;
+      } catch (err) {
+        console.warn(`  ⚠️ Structure ${i + 1} attempt ${attempt + 1} failed: ${(err as Error).message}`);
+        if (attempt === 2) {
+          console.error(`  ❌ Structure ${i + 1} failed after 3 attempts — skipping chunk`);
+        }
+      }
+    }
+    if (questions) allQuestions.push(...questions);
 
     onProgress?.({
       type: 'progress',
-      batch: Math.min(i + CONCURRENCY, textChunks.length) + 1,
+      batch: i + 2,
       totalBatches: textChunks.length + 1,
-      pages: `chunk ${i + 1}-${Math.min(i + CONCURRENCY, textChunks.length)}`,
+      pages: `chunk ${i + 1}`,
       questionsFound: allQuestions.length,
-      message: `Estructurando preguntas (chunk ${i + 1}-${Math.min(i + CONCURRENCY, textChunks.length)} de ${textChunks.length})...`,
+      message: `Estructurando preguntas (chunk ${i + 1} de ${textChunks.length})...`,
     });
+  }
 
-    const results = await Promise.all(batchPromises);
-    results.sort((a, b) => a.idx - b.idx);
-    for (const r of results) {
-      allQuestions.push(...r.questions);
+  // Phase 3: Detect "missing figures" — questions that reference a figure but have no image
+  // When Mathpix OCR extracts a styled visual element (poster, cartel) as text,
+  // it may lose data. We detect this and crop the relevant PDF page as an image.
+  if (testId && mathpixPdfId) {
+    const missingFigurePatterns = /\b(?:en la figura|la figura adjunta|el cartel|la imagen adjunta|en el gráfico adjunto)\b/i;
+    const questionsWithMissingFigures = allQuestions.filter(
+      (q: any) => !q.has_image && !q.image_url &&
+        (missingFigurePatterns.test(q.context || '') || missingFigurePatterns.test(q.text || ''))
+    );
+
+    if (questionsWithMissingFigures.length > 0) {
+      console.log(`  🔍 Phase 3: Found ${questionsWithMissingFigures.length} questions with missing figures`);
+
+      // Build page map from raw OCR text: find page footer markers like "- N -"
+      const pageMap = buildPageMapFromOcr(rawText);
+
+      for (const q of questionsWithMissingFigures) {
+        try {
+          const qNum = parseInt(q.number, 10);
+          const pageNum = pageMap.get(qNum);
+          if (!pageNum) {
+            console.log(`    ⚠️ Q${q.number}: could not determine page number, skipping`);
+            continue;
+          }
+
+          // Crop the middle portion of the page (where figures usually appear)
+          const pagePadded = String(pageNum).padStart(2, '0');
+          const cropUrl = `https://cdn.mathpix.com/cropped/${mathpixPdfId}-${pagePadded}.jpg?height=1200&width=1200&top_left_y=400&top_left_x=250`;
+
+          const cropRes = await fetch(cropUrl, { headers: getMathpixHeaders() });
+          if (!cropRes.ok) {
+            console.log(`    ⚠️ Q${q.number}: crop failed (${cropRes.status}), skipping`);
+            continue;
+          }
+
+          const cropBuffer = Buffer.from(await cropRes.arrayBuffer());
+          const hash = crypto.createHash('md5').update(cropUrl).digest('hex').slice(0, 12);
+          const imagePath = `img_${testId}_fig_${hash}`;
+          const imageUrl = await uploadImage(cropBuffer, imagePath, 'image/jpeg');
+
+          q.has_image = true;
+          q.image_url = imageUrl;
+          q.image_description = q.image_description || '[Figura extraída automáticamente de la página del PDF]';
+          // Prepend image to context so it shows in the editor
+          if (q.context) {
+            q.context = `![](${imageUrl})\n\n${q.context}`;
+          } else {
+            q.context = `![](${imageUrl})`;
+          }
+          console.log(`    ✅ Q${q.number}: extracted figure from page ${pageNum} → ${imageUrl}`);
+        } catch (err) {
+          console.warn(`    ⚠️ Q${q.number}: figure extraction failed: ${(err as Error).message}`);
+        }
+      }
     }
   }
 

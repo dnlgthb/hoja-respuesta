@@ -36,7 +36,7 @@ async function ocrFullPdfMathpix(pdfBuffer: Buffer): Promise<{ text: string; pdf
 
   // Step 1: Upload PDF
   const formData = new FormData();
-  formData.append('file', new Blob([pdfBuffer], { type: 'application/pdf' }), 'prueba.pdf');
+  formData.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), 'prueba.pdf');
   formData.append('options_json', JSON.stringify({
     math_inline_delimiters: ['$', '$'],
     math_display_delimiters: ['$$', '$$'],

@@ -1222,6 +1222,238 @@ async function mergeCompositeFigures(mmdText: string): Promise<string> {
   return result;
 }
 
+// =============================================
+// PHASE 3.5: GPT-4o Vision quality check for Phase 3 figures
+// =============================================
+
+const VISION_VERIFY_PROMPT = `Eres un sistema de análisis visual de documentos educativos.
+
+Se te muestran 2-3 páginas consecutivas de un PDF de prueba educativa. Una pregunta específica (se te indicará su número) referencia una figura/cartel/imagen que fue extraída como texto plano por el OCR.
+
+También se te envía una lista NUMERADA de las líneas del contexto actual de la pregunta. Algunas de esas líneas pueden ser texto que el OCR extrajo de la figura (ej: encabezados de cartel, precios, etiquetas) y que NO debería estar en el texto.
+
+Tu trabajo:
+1. Revisar las líneas numeradas e indicar cuáles son parte de la figura visual y deben ELIMINARSE del contexto.
+2. LOCALIZAR la figura que pertenece ESPECÍFICAMENTE a esa pregunta y dar coordenadas precisas de recorte.
+
+IMPORTANTE: En las páginas puede haber MÚLTIPLES figuras de distintas preguntas. Debes recortar SOLO la figura que corresponde a la pregunta indicada. Busca el número de la pregunta en el PDF para ubicarte y recorta la figura más cercana a ese número.
+
+REGLAS:
+- "lines_to_remove": índices (números) de las líneas del contexto que pertenecen visualmente a la figura y deben eliminarse. Si ninguna línea es parte de la figura, devuelve [].
+- NO marques líneas que son texto legítimo de la pregunta, instrucciones, o enunciado.
+- Sé exhaustivo: si una línea contiene texto que aparece DENTRO de la figura (encabezados, precios, etiquetas, datos), márcala para eliminar.
+
+Responde SOLO con JSON válido:
+{
+  "lines_to_remove": [3, 4, 5, 8]
+}`;
+
+/**
+ * Phase 3.5: Use GPT-4o Vision to verify and refine figures extracted by Phase 3.
+ * Phase 3 uses a fixed crop of the page center, which may be imprecise.
+ * This phase sends surrounding pages to GPT-4o to:
+ *   1. Identify text lines that are duplicated from the figure (OCR'd as text)
+ *   2. Get precise crop coordinates for the figure
+ *
+ * Only runs on questions whose image_url contains '_fig_' (Phase 3 marker).
+ */
+async function visionVerifyFigureQuestions(
+  allQuestions: any[],
+  mathpixPdfId: string,
+  testId: string,
+  rawOcrText: string
+): Promise<void> {
+  // Find questions tagged by Phase 3
+  const phase3Questions = allQuestions.filter(
+    (q: any) => q.image_url && q.image_url.includes('_fig_')
+  );
+
+  if (phase3Questions.length === 0) return;
+
+  console.log(`  🔍 Phase 3.5: verifying ${phase3Questions.length} questions with Vision`);
+
+  const pageMap = buildPageMapFromOcr(rawOcrText);
+
+  // Page dimensions used by Mathpix CDN full-page crops
+  const PAGE_HEIGHT = 2000;
+  const PAGE_WIDTH = 1600;
+
+  // Fetch Mathpix lines.json for precise bounding boxes (one call for all questions)
+  type MathpixLine = { region: { top_left_x: number; top_left_y: number; width: number; height: number }; text: string; type: string };
+  type MathpixPage = { page: number; lines: MathpixLine[] };
+  let mathpixPages: MathpixPage[] = [];
+  try {
+    const linesRes = await fetch(`${MATHPIX_API_URL}/${mathpixPdfId}.lines.json`, {
+      headers: getMathpixHeaders(),
+    });
+    if (linesRes.ok) {
+      const linesData = await linesRes.json() as { pages: MathpixPage[] };
+      mathpixPages = linesData.pages || [];
+      console.log(`    📐 Fetched Mathpix lines.json: ${mathpixPages.length} pages with bounding boxes`);
+    } else {
+      console.warn(`    ⚠️ Could not fetch lines.json (${linesRes.status}), falling back to text-position crop`);
+    }
+  } catch (err) {
+    console.warn(`    ⚠️ lines.json fetch failed: ${(err as Error).message}`);
+  }
+
+  for (const q of phase3Questions) {
+    try {
+      const qNum = parseInt(q.number, 10);
+      const pageNum = pageMap.get(qNum);
+      if (!pageNum) {
+        console.log(`    ⚠️ Phase 3.5 Q${q.number}: no page number, skipping`);
+        continue;
+      }
+
+      // Fetch 3 pages: N-1, N, N+1 (full page images from Mathpix CDN)
+      const pagesToFetch = [pageNum - 1, pageNum, pageNum + 1];
+      const pageImages: Array<{ page: number; base64: string } | null> = await Promise.all(
+        pagesToFetch.map(async (p) => {
+          if (p < 1) return null;
+          const padded = String(p).padStart(2, '0');
+          const url = `https://cdn.mathpix.com/cropped/${mathpixPdfId}-${padded}.jpg?height=${PAGE_HEIGHT}&width=${PAGE_WIDTH}&top_left_y=0&top_left_x=0`;
+          try {
+            const res = await fetch(url, { headers: getMathpixHeaders() });
+            if (!res.ok) return null;
+            const buf = Buffer.from(await res.arrayBuffer());
+            return { page: p, base64: buf.toString('base64') };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const validPages = pageImages.filter((p): p is { page: number; base64: string } => p !== null);
+      if (validPages.length === 0) {
+        console.log(`    ⚠️ Phase 3.5 Q${q.number}: could not fetch any pages, skipping`);
+        continue;
+      }
+
+      // Build numbered context lines for Vision to reference
+      const contextLines = (q.context || '').split('\n');
+      const numberedContext = contextLines
+        .map((line: string, i: number) => `[${i}] ${line}`)
+        .join('\n');
+
+      // Build Vision API message
+      const userContent: any[] = [
+        {
+          type: 'text',
+          text: `PREGUNTA NÚMERO ${q.number}.\n\nLÍNEAS DEL CONTEXTO (indica cuáles eliminar por índice):\n${numberedContext}\n\nTexto pregunta: "${(q.text || '').slice(0, 300)}"\n\nEncuentra y recorta SOLO la figura que pertenece a la pregunta ${q.number}. Indica qué líneas del contexto son texto extraído de la figura.`,
+        },
+        ...validPages.map((p) => ({
+          type: 'image_url',
+          image_url: { url: `data:image/jpeg;base64,${p.base64}` },
+        })),
+      ];
+
+      const completion = await openai.chat.completions.create({
+        model: env.OPENAI_VISION_MODEL,
+        messages: [
+          { role: 'system', content: VISION_VERIFY_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.0,
+        max_tokens: 1000,
+        response_format: { type: 'json_object' },
+      });
+
+      const responseText = completion.choices[0]?.message?.content || '{}';
+      let result: {
+        lines_to_remove?: number[];
+      };
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        console.warn(`    ⚠️ Phase 3.5 Q${q.number}: invalid JSON response, skipping`);
+        continue;
+      }
+
+      // 1. Remove context lines by index
+      const indicesToRemove = new Set(result.lines_to_remove || []);
+      if (indicesToRemove.size > 0 && q.context) {
+        const filtered = contextLines.filter((_: string, i: number) => !indicesToRemove.has(i));
+        const cleanedContext = filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        if (cleanedContext !== q.context) {
+          console.log(`    🧹 Phase 3.5 Q${q.number}: removed ${indicesToRemove.size} lines from context (indices: ${[...indicesToRemove].join(',')})`);
+          q.context = cleanedContext;
+        }
+      }
+
+      // 2. Precise crop using Mathpix lines.json bounding boxes
+      // Match removed context lines to Mathpix lines on the page, then use their
+      // exact pixel regions to compute a tight bounding box for the figure.
+      if (indicesToRemove.size > 0) {
+        const removedTexts = [...indicesToRemove]
+          .map(i => contextLines[i]?.trim())
+          .filter((t: string) => t && t.length > 3);
+
+        const mathpixPage = mathpixPages.find(p => p.page === pageNum);
+
+        if (mathpixPage && removedTexts.length > 0) {
+          // Find Mathpix lines whose text matches any removed context line
+          const matchedRegions: Array<{ top_left_x: number; top_left_y: number; width: number; height: number }> = [];
+          for (const ml of mathpixPage.lines) {
+            const mlText = (ml.text || '').trim();
+            if (!mlText || ml.type === 'page_info') continue;
+            for (const figText of removedTexts) {
+              if (mlText.includes(figText) || figText.includes(mlText)) {
+                matchedRegions.push(ml.region);
+                break;
+              }
+            }
+          }
+
+          if (matchedRegions.length > 0) {
+            // Compute bounding box from matched regions + padding
+            const PADDING = 30;
+            const minX = Math.max(0, Math.min(...matchedRegions.map(r => r.top_left_x)) - PADDING);
+            const minY = Math.max(0, Math.min(...matchedRegions.map(r => r.top_left_y)) - PADDING);
+            const maxX = Math.max(...matchedRegions.map(r => r.top_left_x + r.width)) + PADDING;
+            const maxY = Math.max(...matchedRegions.map(r => r.top_left_y + r.height)) + PADDING;
+
+            const crop_x = minX;
+            const crop_y = minY;
+            const crop_w = maxX - minX;
+            const crop_h = maxY - minY;
+
+            const padded = String(pageNum).padStart(2, '0');
+            const cropUrl = `https://cdn.mathpix.com/cropped/${mathpixPdfId}-${padded}.jpg?height=${crop_h}&width=${crop_w}&top_left_y=${crop_y}&top_left_x=${crop_x}`;
+
+            try {
+              const cropRes = await fetch(cropUrl, { headers: getMathpixHeaders() });
+              if (cropRes.ok) {
+                const cropBuffer = Buffer.from(await cropRes.arrayBuffer());
+                const hash = crypto.createHash('md5').update(cropUrl).digest('hex').slice(0, 12);
+                const imagePath = `img_${testId}_fig_${hash}`;
+                const newImageUrl = await uploadImage(cropBuffer, imagePath, 'image/jpeg');
+
+                const oldImageUrl = q.image_url;
+                q.image_url = newImageUrl;
+                if (q.context && oldImageUrl) {
+                  q.context = q.context.replace(oldImageUrl, newImageUrl);
+                }
+                console.log(`    ✅ Phase 3.5 Q${q.number}: Mathpix bbox crop from page ${pageNum} (${crop_w}x${crop_h} @ ${crop_x},${crop_y}) matched ${matchedRegions.length} lines → ${newImageUrl}`);
+              } else {
+                console.log(`    ⚠️ Phase 3.5 Q${q.number}: bbox crop failed (${cropRes.status}), keeping Phase 3 crop`);
+              }
+            } catch (err) {
+              console.warn(`    ⚠️ Phase 3.5 Q${q.number}: crop upload failed: ${(err as Error).message}`);
+            }
+          } else {
+            console.log(`    ⚠️ Phase 3.5 Q${q.number}: no Mathpix lines matched figure text, keeping Phase 3 crop`);
+          }
+        } else {
+          console.log(`    ⚠️ Phase 3.5 Q${q.number}: no lines.json data for page ${pageNum}, keeping Phase 3 crop`);
+        }
+      }
+    } catch (err) {
+      console.warn(`    ⚠️ Phase 3.5 Q${q.number}: verification failed: ${(err as Error).message}`);
+    }
+  }
+}
+
 /**
  * Analyze a PDF using Mathpix for OCR (Phase 1) + gpt-4o-mini for structuring (Phase 2).
  * Mathpix is specialized in math OCR — produces perfect LaTeX for exponents, fractions, roots.
@@ -1424,6 +1656,15 @@ export async function analyzeDocumentMathpix(
           console.warn(`    ⚠️ Q${q.number}: figure extraction failed: ${(err as Error).message}`);
         }
       }
+    }
+  }
+
+  // Phase 3.5: Vision-verify Phase 3 figures — use GPT-4o to refine crop & clean duplicated text
+  if (testId && mathpixPdfId) {
+    try {
+      await visionVerifyFigureQuestions(allQuestions, mathpixPdfId, testId, rawText);
+    } catch (err) {
+      console.warn(`  ⚠️ Phase 3.5 failed: ${(err as Error).message} — keeping Phase 3 results`);
     }
   }
 

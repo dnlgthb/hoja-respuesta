@@ -381,6 +381,11 @@ function fixTextWrappedLatex(text: string): string {
   text = text.replace(/\\text\{\\textdollar\}/g, '\\$');
   text = text.replace(/\\textdollar/g, '\\$');
 
+  // --- Phase 2 inserts \n\text{ } padding around operators ---
+  // "$7 \cdot 25$" becomes "$7 \n\text{ } \cdot 25$" in JSON
+  // After JSON.parse the \n is a real newline. Clean: newline + \text{ } → single space
+  text = text.replace(/\n\s*\\text\{\s*\}/g, ' ');
+
   // --- \times → \cdot (Phase 2 converts \cdot to \times; Mathpix never uses \times) ---
   text = text.replace(/\\times/g, '\\cdot');
 
@@ -661,7 +666,13 @@ function cleanStructuralLatex(text: string): string {
   // 3. Fix currency $\n$ NUMBER$ → \$NUMBER
   // Phase 2 breaks Chilean peso "$300.000" into "$\n$ 300000$"
   // After JSON.parse the \n becomes a real newline, so pattern is: $ + whitespace + $ + digits + $
-  text = text.replace(/\$\s*\n\s*\$\s*(\d[\d.,\s]*)\$/g, '\\$$1');
+  // Note: replacement '\\$$$1' = \\ (literal \) + $$ (literal $) + $1 (capture group)
+  text = text.replace(/\$\s*\n\s*\$\s*(\d[\d.,\s]*)\$/g, '\\$$$1');
+
+  // 3b. Fix currency $\n NUMBER$ → \$NUMBER (variant without middle $)
+  // Phase 2 sometimes drops the \$ entirely, producing "$\n 7300$" in JSON
+  // After JSON.parse: $ + newline + space + digits + $
+  text = text.replace(/\$\s*\n\s+(\d[\d.,\s]*)\$/g, '\\$$$1');
 
   // 4. Fix \$ NUMBER in plain text (Mathpix's escaped dollar for currency)
   // \$ 30 is fine as stored format — frontend will render \$ as $
@@ -687,6 +698,11 @@ export function postProcessMathText(text: string): string {
   text = text.replace(/[\n\r\t\f\x08]cdot\b/g, '\\cdot');
   text = text.replace(/[\n\r\t\f\x08]cdots\b/g, '\\cdots');
   text = text.replace(/[\n\r\t\f\x08]sqrt(?=[{\s(])/g, '\\sqrt');
+
+  // Step -2b: Fix \n% → \% (Phase 2 writes \% in JSON but \n eats the backslash)
+  // After JSON.parse: newline + % — should be \% (LaTeX percent)
+  // Then fixTextWrappedLatex \% → % will normalize it for display
+  text = text.replace(/[\n\r\t\f\x08]%/g, '\\%');
 
   // Step -1: Fix literal \n (two chars: backslash + n) → actual newline
   // fixLatexInJsonString bug: sometimes double-escapes \n making it literal

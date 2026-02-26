@@ -327,15 +327,6 @@ VALIDACIÓN DE OPCIONES:
 - Si solo encuentras 3 opciones visibles y hay una imagen, la 4ta podría estar en la imagen
 - NO inventes opciones que no estén en la transcripción
 
-PREGUNTAS CON IMÁGENES:
-- Si la transcripción contiene ![](URL) o ![caption](URL) antes o dentro de una pregunta, pon has_image: true, la URL en image_url, y una descripción breve en image_description
-- Si hay MÚLTIPLES imágenes para una pregunta: usa la primera URL en image_url. Las imágenes adicionales y TODO el texto que hay entre ellas deben ir en "context" manteniendo la sintaxis ![caption](URL). NO pierdas el texto intermedio entre imágenes.
-- Ejemplo con 2 imágenes: image_url="URL1", context="Texto intro...\n\n![](URL1)\n\nTexto entre imágenes...\n\n![tabla](URL2)"
-- Si las opciones son imágenes (ej: ![B)](URL)), mantén la sintaxis ![caption](URL) dentro de las opciones
-- Si la transcripción indica [Imagen: ...], pon has_image: true y la descripción en image_description
-- NO incluyas la PRIMERA ![](URL) dentro de "text" — extráela al campo image_url
-
-
 TEXTO INTRODUCTORIO Y CONTEXTO:
 - Si hay texto introductorio/escenario ANTES de la pregunta real (ej: "Un diario tiene una colilla recortable..."), ponlo en "context"
 - "text" debe contener SOLO la pregunta directa (la oración interrogativa o instrucción)
@@ -354,11 +345,7 @@ Responde ÚNICAMENTE con JSON válido:
       "context": null,
       "options": ["A) $-1$", "B) $-3$", "C) $-12$", "D) $-24$"],
       "correct_answer": null,
-      "points": 1,
-      "has_image": false,
-      "image_description": null,
-      "image_page": null,
-      "image_url": null
+      "points": 1
     }
   ]
 }
@@ -488,8 +475,8 @@ async function structureTranscription(
 
   console.log(`  📝 Phase 2 done: ${rawQuestions.length} questions structured (${elapsed}s)`);
 
-  // Phase 2.5: Recover images that gpt-4o-mini may have dropped from context
-  recoverMissingImages(rawQuestions, transcription);
+  // Phase 2.5 SKIPPED — images no longer in pipeline
+  // recoverMissingImages(rawQuestions, transcription);
 
   // Post-process: convert Unicode math to LaTeX, fix bare commands, repair broken escapes
   const questions = rawQuestions.map((q: any) => {
@@ -859,36 +846,42 @@ async function convertTablesToImages(mmdText: string, testId: string): Promise<s
  *   2. LaTeX: \begin{figure}\includegraphics[...]{URL}\caption{X}\end{figure} — needs normalization
  * This must run BEFORE extractAndRehostImages so the unified ![](URL) regex catches everything.
  */
-function normalizeMathpixFigures(mmdText: string): string {
-  // Step 1: Match \begin{figure}...\end{figure} blocks (caption before or after \includegraphics)
-  const figureRegex = /\\begin\{figure\}[\s\S]*?\\end\{figure\}/g;
+/**
+ * Strip all image references from Mathpix .mmd text.
+ * Images are no longer extracted/hosted — the PDF is shown alongside questions instead.
+ * Removes: \begin{figure}...\end{figure}, standalone \includegraphics, ![...](cdn.mathpix.com/...)
+ * Original function (normalizeMathpixFigures) converted these to ![](URL); now we just remove them.
+ */
+function stripImageReferences(mmdText: string): string {
+  let result = mmdText;
   let figureCount = 0;
-
-  let result = mmdText.replace(figureRegex, (block) => {
-    // Extract URL from \includegraphics[...]{URL}
-    const urlMatch = block.match(/\\includegraphics\[[^\]]*\]\{(https?:\/\/[^}]+)\}/);
-    if (!urlMatch) return block; // No URL found, leave as-is
-
-    // Extract caption from \caption{...}
-    const captionMatch = block.match(/\\caption\{([^}]*)\}/);
-    const caption = captionMatch ? captionMatch[1].trim() : '';
-
-    figureCount++;
-    return `![${caption}](${urlMatch[1]})`;
-  });
-
-  // Step 2: Convert standalone \includegraphics[...]{url} outside of figure blocks
-  // These are missed by the figure block regex above
-  const standaloneRegex = /\\includegraphics\[([^\]]*)\]\{(https?:\/\/[^}]+)\}/g;
   let standaloneCount = 0;
+  let mdImageCount = 0;
 
-  result = result.replace(standaloneRegex, (_match, _attrs, url) => {
-    standaloneCount++;
-    return `![](${url})`;
+  // Step 1: Remove \begin{figure}...\end{figure} blocks entirely
+  result = result.replace(/\\begin\{figure\}[\s\S]*?\\end\{figure\}/g, () => {
+    figureCount++;
+    return '';
   });
 
-  if (figureCount > 0 || standaloneCount > 0) {
-    console.log(`  🔄 Normalized ${figureCount} figure blocks + ${standaloneCount} standalone \\includegraphics → ![](URL)`);
+  // Step 2: Remove standalone \includegraphics[...]{url}
+  result = result.replace(/\\includegraphics\[[^\]]*\]\{https?:\/\/[^}]+\}/g, () => {
+    standaloneCount++;
+    return '';
+  });
+
+  // Step 3: Remove ![...](cdn.mathpix.com/...) markdown image refs that Mathpix leaves directly
+  result = result.replace(/!\[[^\]]*\]\(https?:\/\/cdn\.mathpix\.com\/[^)]+\)/g, () => {
+    mdImageCount++;
+    return '';
+  });
+
+  // Clean up leftover blank lines from removals
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  const total = figureCount + standaloneCount + mdImageCount;
+  if (total > 0) {
+    console.log(`  🧹 Stripped ${total} image references (${figureCount} figure blocks, ${standaloneCount} \\includegraphics, ${mdImageCount} ![](cdn.mathpix.com))`);
   }
   return result;
 }
@@ -1476,7 +1469,7 @@ export async function analyzeDocumentMathpix(
     message: 'Enviando PDF a Mathpix OCR...',
   });
 
-  const { text: rawText, pdfId: mathpixPdfId } = await ocrFullPdfMathpix(pdfBuffer);
+  const { text: rawText } = await ocrFullPdfMathpix(pdfBuffer);
   let fullText = rawText;
 
   // DEBUG: Dump raw .mmd
@@ -1485,60 +1478,24 @@ export async function analyzeDocumentMathpix(
   fs.writeFileSync(path.join(debugDir, '01-raw-ocr.mmd'), fullText, 'utf-8');
   console.log(`  📝 DEBUG: Saved raw OCR to debug-mmd/01-raw-ocr.mmd`);
 
-  // Phase 1.25: Normalize \begin{figure} LaTeX blocks → ![caption](URL) markdown
-  fullText = normalizeMathpixFigures(fullText);
+  // Phase 1.25: Strip image references (figures, includegraphics, CDN markdown images)
+  // Images no longer extracted — PDF shown alongside questions instead
+  fullText = stripImageReferences(fullText);
 
   // DEBUG: Dump after Phase 1.25
   fs.writeFileSync(path.join(debugDir, '02-after-normalize.mmd'), fullText, 'utf-8');
   console.log(`  📝 DEBUG: Saved normalized to debug-mmd/02-after-normalize.mmd`);
 
-  // Phase 1.3: Detect and merge composite figures (before re-hosting, while CDN URLs are active)
-  try {
-    onProgress?.({
-      type: 'progress',
-      batch: 1,
-      totalBatches: 5,
-      pages: 'all',
-      questionsFound: 0,
-      message: 'Detectando figuras compuestas...',
-    });
-    fullText = await mergeCompositeFigures(fullText);
-  } catch (err) {
-    console.warn(`  ⚠️ Phase 1.3 (composite merging) failed: ${(err as Error).message} — continuing with original text`);
-  }
-
-  // DEBUG: Dump after Phase 1.3
-  fs.writeFileSync(path.join(debugDir, '03-after-composite-merge.mmd'), fullText, 'utf-8');
-  console.log(`  📝 DEBUG: Saved after composite merge to debug-mmd/03-after-composite-merge.mmd`);
-
-  // Phase 1.5: Extract images from Mathpix CDN and re-host to Supabase
-  if (testId) {
-    onProgress?.({
-      type: 'progress',
-      batch: 2,
-      totalBatches: 5,
-      pages: 'all',
-      questionsFound: 0,
-      message: 'Re-hosteando imágenes del PDF...',
-    });
-    fullText = await extractAndRehostImages(fullText, testId);
-
-    // Phase 1.6: Convert LaTeX tables to images
-    onProgress?.({
-      type: 'progress',
-      batch: 3,
-      totalBatches: 5,
-      pages: 'all',
-      questionsFound: 0,
-      message: 'Convirtiendo tablas a imágenes...',
-    });
-    fullText = await convertTablesToImages(fullText, testId);
-  }
+  // Phases 1.3, 1.5, 1.6 SKIPPED — images no longer extracted/hosted.
+  // PDF is shown alongside questions instead. Functions kept for potential reactivation.
+  // - Phase 1.3: mergeCompositeFigures()
+  // - Phase 1.5: extractAndRehostImages()
+  // - Phase 1.6: convertTablesToImages()
 
   // Phase 1.7: Clean structural LaTeX before Phase 2
   // Remove \section*{} wrappers so Phase 2 sees cleaner text
   fullText = fullText.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1');
-  // Remove page footer markers "- N -" added by include_page_info (buildPageMapFromOcr uses rawText)
+  // Remove page footer markers "- N -" added by include_page_info
   fullText = fullText.replace(/^-\s*\d+\s*-$/gm, '');
   // Strip \mathrm{X} → X — gpt-4o-mini tries to convert these to \text{X}
   // and enters an infinite repetition loop when combined with \leq, \cdot, etc.
@@ -1602,71 +1559,10 @@ export async function analyzeDocumentMathpix(
     });
   }
 
-  // Phase 3: Detect "missing figures" — questions that reference a figure but have no image
-  // When Mathpix OCR extracts a styled visual element (poster, cartel) as text,
-  // it may lose data. We detect this and crop the relevant PDF page as an image.
-  if (testId && mathpixPdfId) {
-    const missingFigurePatterns = /\b(?:en la figura|la figura adjunta|el cartel|la imagen adjunta|en el gráfico adjunto)\b/i;
-    const questionsWithMissingFigures = allQuestions.filter(
-      (q: any) => !q.has_image && !q.image_url &&
-        (missingFigurePatterns.test(q.context || '') || missingFigurePatterns.test(q.text || ''))
-    );
-
-    if (questionsWithMissingFigures.length > 0) {
-      console.log(`  🔍 Phase 3: Found ${questionsWithMissingFigures.length} questions with missing figures`);
-
-      // Build page map from raw OCR text: find page footer markers like "- N -"
-      const pageMap = buildPageMapFromOcr(rawText);
-
-      for (const q of questionsWithMissingFigures) {
-        try {
-          const qNum = parseInt(q.number, 10);
-          const pageNum = pageMap.get(qNum);
-          if (!pageNum) {
-            console.log(`    ⚠️ Q${q.number}: could not determine page number, skipping`);
-            continue;
-          }
-
-          // Crop the middle portion of the page (where figures usually appear)
-          const pagePadded = String(pageNum).padStart(2, '0');
-          const cropUrl = `https://cdn.mathpix.com/cropped/${mathpixPdfId}-${pagePadded}.jpg?height=1200&width=1200&top_left_y=400&top_left_x=250`;
-
-          const cropRes = await fetch(cropUrl, { headers: getMathpixHeaders() });
-          if (!cropRes.ok) {
-            console.log(`    ⚠️ Q${q.number}: crop failed (${cropRes.status}), skipping`);
-            continue;
-          }
-
-          const cropBuffer = Buffer.from(await cropRes.arrayBuffer());
-          const hash = crypto.createHash('md5').update(cropUrl).digest('hex').slice(0, 12);
-          const imagePath = `img_${testId}_fig_${hash}`;
-          const imageUrl = await uploadImage(cropBuffer, imagePath, 'image/jpeg');
-
-          q.has_image = true;
-          q.image_url = imageUrl;
-          q.image_description = q.image_description || '[Figura extraída automáticamente de la página del PDF]';
-          // Prepend image to context so it shows in the editor
-          if (q.context) {
-            q.context = `![](${imageUrl})\n\n${q.context}`;
-          } else {
-            q.context = `![](${imageUrl})`;
-          }
-          console.log(`    ✅ Q${q.number}: extracted figure from page ${pageNum} → ${imageUrl}`);
-        } catch (err) {
-          console.warn(`    ⚠️ Q${q.number}: figure extraction failed: ${(err as Error).message}`);
-        }
-      }
-    }
-  }
-
-  // Phase 3.5: Vision-verify Phase 3 figures — use GPT-4o to refine crop & clean duplicated text
-  if (testId && mathpixPdfId) {
-    try {
-      await visionVerifyFigureQuestions(allQuestions, mathpixPdfId, testId, rawText);
-    } catch (err) {
-      console.warn(`  ⚠️ Phase 3.5 failed: ${(err as Error).message} — keeping Phase 3 results`);
-    }
-  }
+  // Phases 3, 3.5 SKIPPED — images no longer extracted/hosted.
+  // PDF is shown alongside questions instead. Functions kept for potential reactivation.
+  // - Phase 3: missing figure detection + crop from PDF pages
+  // - Phase 3.5: visionVerifyFigureQuestions()
 
   console.log(`📄 Total: ${allQuestions.length} preguntas extraídas (Mathpix + ${textChunks.length} structure calls)`);
   return allQuestions;

@@ -524,19 +524,35 @@ export default function PruebaAttemptPage() {
         {/* Formulario de respuestas - Desktop: lado derecho con scroll, Mobile: abajo */}
         <div className="flex-1 lg:w-1/2 overflow-y-auto">
           <div className="p-4 sm:p-6 space-y-6">
-            {attemptData.test.questions.map((question) => (
-              <QuestionCard
-                key={question.id}
-                question={question}
-                value={answers[question.id] || ''}
-                onChange={(value) => handleAnswerChange(question.id, value)}
-                justification={justifications[question.id] || ''}
-                onJustificationChange={(value) => handleJustificationChange(question.id, value)}
-                requireFalseJustification={attemptData.test.requireFalseJustification}
-                onPasteAttempt={handlePasteAttempt}
-                disabled={isSubmitted}
-              />
-            ))}
+            {attemptData.test.questions.map((question, idx) => {
+              const prevSection = idx > 0 ? attemptData.test.questions[idx - 1].context : null;
+              const currentSection = question.context;
+              const showSectionHeader = currentSection && currentSection !== prevSection;
+
+              return (
+                <div key={question.id}>
+                  {showSectionHeader && (
+                    <div className={`flex items-center gap-3 ${idx > 0 ? 'mt-4' : ''} mb-2`}>
+                      <div className="h-px flex-1 bg-gray-300" />
+                      <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                        {currentSection}
+                      </span>
+                      <div className="h-px flex-1 bg-gray-300" />
+                    </div>
+                  )}
+                  <QuestionCard
+                    question={question}
+                    value={answers[question.id] || ''}
+                    onChange={(value) => handleAnswerChange(question.id, value)}
+                    justification={justifications[question.id] || ''}
+                    onJustificationChange={(value) => handleJustificationChange(question.id, value)}
+                    requireFalseJustification={attemptData.test.requireFalseJustification}
+                    onPasteAttempt={handlePasteAttempt}
+                    disabled={isSubmitted}
+                  />
+                </div>
+              );
+            })}
 
             {/* Botón entregar */}
             {!isSubmitted && (
@@ -717,11 +733,12 @@ interface QuestionCardProps {
 
 function QuestionCard({ question, value, onChange, justification, onJustificationChange, requireFalseJustification, onPasteAttempt, disabled }: QuestionCardProps) {
   const isAnswered = value && value.trim() !== '';
+  const hasText = !!(question.questionText && question.questionText.trim());
 
   return (
     <div className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden ${disabled ? 'opacity-75' : ''}`}>
       {/* Header de pregunta */}
-      <div className="flex items-start gap-3 p-4 border-b border-gray-100 bg-gray-50">
+      <div className={`flex items-start gap-3 p-4 ${hasText ? 'border-b border-gray-100' : ''} bg-gray-50`}>
         <div className="flex-shrink-0">
           {isAnswered ? (
             <CheckCircle className="w-6 h-6 text-green-500" />
@@ -738,27 +755,33 @@ function QuestionCard({ question, value, onChange, justification, onJustificatio
               {question.points} {question.points === 1 ? 'punto' : 'puntos'}
             </span>
           </div>
-          {/* Contexto introductorio */}
-          {question.context && (
-            <div className="text-gray-600 text-sm mb-1">
-              <RichMathText text={question.context} />
-            </div>
+          {hasText ? (
+            <>
+              {/* Contexto introductorio */}
+              {question.context && (
+                <div className="text-gray-600 text-sm mb-1">
+                  <RichMathText text={question.context} />
+                </div>
+              )}
+              {/* Imagen de la pregunta (entre contexto y pregunta) */}
+              {(question.imageUrl || question.image_url) && (
+                <div className="my-2">
+                  <img
+                    src={question.imageUrl || question.image_url || ''}
+                    alt={question.imageDescription || question.image_description || 'Imagen de la pregunta'}
+                    className="max-w-full max-h-72 object-contain rounded border border-gray-200"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              {/* Texto de la pregunta */}
+              <div className="text-gray-700">
+                <RichMathText text={question.questionText} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 italic">Consulta el PDF para ver la pregunta</p>
           )}
-          {/* Imagen de la pregunta (entre contexto y pregunta) */}
-          {(question.imageUrl || question.image_url) && (
-            <div className="my-2">
-              <img
-                src={question.imageUrl || question.image_url || ''}
-                alt={question.imageDescription || question.image_description || 'Imagen de la pregunta'}
-                className="max-w-full max-h-72 object-contain rounded border border-gray-200"
-                loading="lazy"
-              />
-            </div>
-          )}
-          {/* Texto de la pregunta */}
-          <div className="text-gray-700">
-            <RichMathText text={question.questionText} />
-          </div>
         </div>
       </div>
 
@@ -892,6 +915,34 @@ interface MultipleChoiceInputProps extends InputProps {
 
 function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleChoiceInputProps) {
   const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  // Compact "bubble sheet" mode: options are just letters (e.g. ["A","B","C","D"])
+  const isLetterOnly = options.every(opt => /^[A-H]$/.test(opt.trim()));
+
+  if (isLetterOnly) {
+    return (
+      <div className="flex gap-3 flex-wrap">
+        {options.map((option, index) => {
+          const letter = letters[index] || String(index + 1);
+          const isSelected = value === letter;
+          return (
+            <button
+              key={index}
+              type="button"
+              onClick={() => !disabled && onChange(letter)}
+              disabled={disabled}
+              className={`w-12 h-12 rounded-full border-2 transition-all flex items-center justify-center text-base font-bold ${
+                isSelected
+                  ? 'border-primary bg-primary text-white shadow-md scale-110'
+                  : 'border-gray-300 bg-white text-gray-600 hover:border-primary/50 hover:bg-primary/5'
+              } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              {letter}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

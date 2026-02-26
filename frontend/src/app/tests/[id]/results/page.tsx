@@ -746,7 +746,11 @@ export default function ResultsPage() {
                             </div>
 
                             <div className="text-sm text-gray-600 mb-3 line-clamp-2">
-                              <RichMathText text={answer.questionText} />
+                              {answer.questionText && answer.questionText.trim() ? (
+                                <RichMathText text={answer.questionText} />
+                              ) : (
+                                <span className="text-gray-400 italic">Pregunta {answer.questionNumber} (ver PDF)</span>
+                              )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4 text-sm">

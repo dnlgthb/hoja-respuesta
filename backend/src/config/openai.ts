@@ -1447,7 +1447,122 @@ async function visionVerifyFigureQuestions(
   }
 }
 
+// =============================================
+// ANSWER SHEET PIPELINE — Simple question list extraction
+// The PDF IS the test. We only need question numbers and types.
+// =============================================
+
+const ANSWER_SHEET_PROMPT = `Eres un asistente que analiza transcripciones OCR de pruebas/exámenes educacionales chilenos.
+Tu tarea es SOLO identificar las secciones y preguntas con sus tipos. NO extraigas el texto, opciones, ni contenido.
+
+Reglas:
+- Detecta secciones del examen si las hay (ej: "I. Selección Múltiple", "II. Verdadero o Falso", "Sección A", etc.)
+- Identifica cada pregunta por su número tal como aparece en el PDF
+- El campo "number" debe reflejar la numeración EXACTA del PDF (ej: "1", "2" o "I.1", "I.2" si tienen prefijo de sección)
+- Clasifica cada pregunta en uno de estos tipos:
+  - MULTIPLE_CHOICE: tiene alternativas A), B), C), D) o similar
+  - TRUE_FALSE: pide indicar Verdadero o Falso
+  - DEVELOPMENT: respuesta abierta/redacción
+  - MATH: requiere cálculo matemático o resultado numérico
+- Para MULTIPLE_CHOICE, cuenta cuántas alternativas tiene (normalmente 4 o 5)
+- Si hay sub-preguntas (a, b, c), cada una es una pregunta separada
+- Ignora instrucciones generales, encabezados, y texto introductorio que no sean preguntas
+- Si una sección tiene título, inclúyelo en "section". Si no hay secciones, omite "section".
+
+Responde SOLO con JSON válido en este formato exacto:
+{
+  "questions": [
+    { "number": "1", "type": "MULTIPLE_CHOICE", "options_count": 4, "section": "I. Selección Múltiple" },
+    { "number": "2", "type": "MULTIPLE_CHOICE", "options_count": 4, "section": "I. Selección Múltiple" },
+    { "number": "3", "type": "TRUE_FALSE", "section": "II. Verdadero o Falso" },
+    { "number": "4", "type": "DEVELOPMENT", "section": "III. Desarrollo" }
+  ]
+}`;
+
 /**
+ * Simple answer-sheet pipeline: Mathpix OCR → single gpt-4o-mini call → question list.
+ * Only extracts question numbers and types. No text, options, images, or LaTeX.
+ * The PDF is shown alongside the answer sheet instead.
+ * @param pdfBuffer - Full PDF as Buffer
+ * @param onProgress - Optional callback for progress updates
+ * @returns Array of { number, type, options_count? }
+ */
+export async function extractQuestionListMathpix(
+  pdfBuffer: Buffer,
+  onProgress?: ProgressCallback,
+): Promise<Array<{ number: string; type: string; options_count?: number; section?: string }>> {
+  const startTime = Date.now();
+
+  // Phase 1: Mathpix OCR
+  onProgress?.({
+    type: 'progress',
+    batch: 1,
+    totalBatches: 2,
+    pages: 'all',
+    questionsFound: 0,
+    message: 'Enviando PDF a Mathpix OCR...',
+  });
+
+  const { text: rawText } = await ocrFullPdfMathpix(pdfBuffer);
+
+  // Minimal cleanup: strip images + page markers
+  let cleanText = stripImageReferences(rawText);
+  cleanText = cleanText.replace(/^-\s*\d+\s*-$/gm, ''); // page footers
+  cleanText = cleanText.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1'); // section headers
+  cleanText = cleanText.replace(/\\begin\{tabular\}[\s\S]*?\\end\{tabular\}/g, '[tabla]'); // tables → placeholder
+  cleanText = cleanText.replace(/\n{3,}/g, '\n\n'); // collapse blank lines
+
+  console.log(`  📄 OCR cleanup: ${cleanText.length} chars (${cleanText.split('\n').length} lines)`);
+
+  // Single gpt-4o-mini call to identify questions
+  onProgress?.({
+    type: 'progress',
+    batch: 2,
+    totalBatches: 2,
+    pages: 'all',
+    questionsFound: 0,
+    message: 'Identificando preguntas...',
+  });
+
+  let questions: Array<{ number: string; type: string; options_count?: number; section?: string }> = [];
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: ANSWER_SHEET_PROMPT },
+          { role: 'user', content: cleanText },
+        ],
+        temperature: 0.0,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
+      });
+
+      const responseText = completion.choices[0]?.message.content || '{}';
+      const parsed = JSON.parse(responseText);
+      questions = parsed.questions || [];
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`  ✅ Answer sheet: ${questions.length} preguntas identificadas en ${elapsed}s${attempt > 0 ? ' (retry)' : ''}`);
+      break;
+    } catch (err) {
+      console.warn(`  ⚠️ Answer sheet attempt ${attempt + 1} failed: ${(err as Error).message}`);
+      if (attempt === 1) {
+        throw new Error(`Failed to extract question list after 2 attempts: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  return questions;
+}
+
+// =============================================
+// DEPRECATED — Full extraction pipeline (kept for potential reactivation)
+// =============================================
+
+/**
+ * @deprecated Use extractQuestionListMathpix() instead.
  * Analyze a PDF using Mathpix for OCR (Phase 1) + gpt-4o-mini for structuring (Phase 2).
  * Mathpix is specialized in math OCR — produces perfect LaTeX for exponents, fractions, roots.
  * @param pdfBuffer - Full PDF as Buffer
@@ -1543,7 +1658,37 @@ export async function analyzeDocumentMathpix(
           fs.writeFileSync(path.join(debugDir, `chunk-${i+1}-failed-attempt${attempt+1}.txt`), chunk, 'utf-8');
         } catch {}
         if (attempt === 2) {
-          console.error(`  ❌ Structure ${i + 1} failed after 3 attempts — skipping chunk`);
+          console.warn(`  ⚠️ Structure ${i + 1} failed after 3 attempts — splitting into sub-chunks`);
+          const subChunks = splitMathpixTextIntoChunks(chunk, 30);
+          console.log(`  🔀 Split chunk ${i + 1} into ${subChunks.length} sub-chunks (~30 lines each)`);
+          const subQuestions: any[] = [];
+          for (let s = 0; s < subChunks.length; s++) {
+            const subChunk = subChunks[s];
+            const subInfo = `texto chunk ${i + 1} sub-chunk ${s + 1} de ${subChunks.length}`;
+            let subResult: any[] | null = null;
+            for (let subAttempt = 0; subAttempt < 2; subAttempt++) {
+              try {
+                subResult = await structureTranscription(subChunk, subInfo);
+                console.log(`    ✅ Sub-chunk ${s + 1}/${subChunks.length}${subAttempt > 0 ? ' (retry)' : ''}: ${subResult.length} preguntas`);
+                break;
+              } catch (subErr) {
+                console.warn(`    ⚠️ Sub-chunk ${s + 1} attempt ${subAttempt + 1} failed: ${(subErr as Error).message}`);
+                try {
+                  fs.writeFileSync(path.join(debugDir, `chunk-${i+1}-sub${s+1}-failed.txt`), subChunk, 'utf-8');
+                } catch {}
+                if (subAttempt === 1) {
+                  console.error(`    ❌ Sub-chunk ${s + 1} failed after 2 attempts — skipping (~1-2 preguntas perdidas)`);
+                }
+              }
+            }
+            if (subResult) subQuestions.push(...subResult);
+          }
+          if (subQuestions.length > 0) {
+            questions = subQuestions;
+            console.log(`  🔄 Recovered ${subQuestions.length} preguntas from sub-chunks (chunk ${i + 1})`);
+          } else {
+            console.error(`  ❌ All sub-chunks of chunk ${i + 1} failed — skipping entire chunk`);
+          }
         }
       }
     }
@@ -1574,17 +1719,20 @@ export async function analyzeDocumentMathpix(
  * @returns Array de estudiantes con nombre y email
  */
 export async function extractStudentsFromFile(content: string) {
-  const prompt = `Analiza este contenido de archivo Excel/CSV y extrae la lista de estudiantes.
-Busca nombres completos de personas y emails (si existen).
+  const prompt = `Analiza este contenido de archivo Excel/CSV y extrae SOLO la lista de estudiantes (personas reales).
 
 REGLAS IMPORTANTES:
-1. Extrae TODOS los nombres de personas que encuentres
-2. Ignora encabezados como "Nombre", "Estudiante", "Email", "N°", etc.
-3. Ignora números de lista al inicio de filas (1, 2, 3...)
-4. Solo omite un nombre si está EXPLÍCITAMENTE tachado (con ~~texto~~ o caracteres de tachado)
-5. NO omitas nombres solo porque están cerca de otros tachados
-6. Cada nombre debe evaluarse INDIVIDUALMENTE - si no tiene marcas de tachado, INCLÚYELO
-7. En caso de duda, INCLUYE el nombre (es mejor incluir de más que omitir)
+1. Extrae SOLO nombres de PERSONAS reales (nombre + apellido)
+2. Un nombre válido tiene al menos un nombre de pila Y un apellido (ej: "Juan Pérez", "María González López")
+3. IGNORA todo lo que NO sea un nombre de persona:
+   - Encabezados: "Nombre", "Estudiante", "Email", "N°", "RUT", etc.
+   - Números sueltos: 1, 2, 3, 10, 20, etc.
+   - Etiquetas de planilla: "Asignatura:", "Curso:", "Fecha:", "Profesor:", "Periodo:", etc.
+   - Estadísticas: "Promedio", "Mediana", "Desviación estándar", "Nota mayor", "Nota menor", etc.
+   - Rangos de notas: "Rango ≤ 3.9", "De nota 1.0 a 3.9", etc.
+   - Cualquier texto que sea claramente metadata de una planilla y NO un nombre de persona
+4. Solo omite un nombre de persona si está EXPLÍCITAMENTE tachado
+5. Cada entrada debe evaluarse: ¿Es esto el nombre de una persona real? Si no, exclúyelo.
 
 Responde SOLO con JSON válido en este formato:
 {

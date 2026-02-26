@@ -799,22 +799,38 @@ export default function TestDetailPage() {
 
           {/* Questions List */}
           <div className="space-y-4 mb-8">
-            {questions.map((question, index) => (
-              <QuestionEditor
-                key={question.id}
-                question={question}
-                index={index}
-                totalQuestions={questions.length}
-                testId={testId}
-                onChange={(updates) => handleQuestionChange(question.id, updates)}
-                onDelete={() => handleDeleteQuestion(question.id)}
-                onMoveUp={() => handleMoveUp(index)}
-                onMoveDown={() => handleMoveDown(index)}
-                requireFalseJustification={requireFalseJustification}
-                isFirst={index === 0}
-                isLast={index === questions.length - 1}
-              />
-            ))}
+            {questions.map((question, index) => {
+              const prevSection = index > 0 ? (questions[index - 1].context || null) : null;
+              const currentSection = question.context || null;
+              const showSectionHeader = currentSection && currentSection !== prevSection;
+
+              return (
+                <div key={question.id}>
+                  {showSectionHeader && (
+                    <div className={`flex items-center gap-3 ${index > 0 ? 'mt-2' : ''} mb-2`}>
+                      <div className="h-px flex-1 bg-gray-300" />
+                      <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                        {currentSection}
+                      </span>
+                      <div className="h-px flex-1 bg-gray-300" />
+                    </div>
+                  )}
+                  <QuestionEditor
+                    question={question}
+                    index={index}
+                    totalQuestions={questions.length}
+                    testId={testId}
+                    onChange={(updates) => handleQuestionChange(question.id, updates)}
+                    onDelete={() => handleDeleteQuestion(question.id)}
+                    onMoveUp={() => handleMoveUp(index)}
+                    onMoveDown={() => handleMoveDown(index)}
+                    requireFalseJustification={requireFalseJustification}
+                    isFirst={index === 0}
+                    isLast={index === questions.length - 1}
+                  />
+                </div>
+              );
+            })}
 
             {/* Botón agregar pregunta */}
             {!isActive && (

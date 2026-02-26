@@ -89,7 +89,8 @@ export default function QuestionEditor({
   const correctionCriteria = question.correctionCriteria || question.correction_criteria || '';
   const requireUnits = question.requireUnits ?? question.require_units ?? false;
   const unitPenalty = question.unitPenalty ?? question.unit_penalty ?? 0.5;
-  const questionContext = cleanDisplayText(question.context || '') || null;
+  // In answer-sheet mode (no question text), context holds the section name — don't merge it into text
+  const questionContext = questionText ? (cleanDisplayText(question.context || '') || null) : null;
   const imageUrl = question.imageUrl || question.image_url || null;
   const hasImage = question.hasImage || question.has_image || false;
   const imageDescription = question.imageDescription || question.image_description || null;
@@ -302,7 +303,11 @@ export default function QuestionEditor({
             {typeLabels[localType]}
           </span>
           <span className="text-sm text-gray-500 truncate max-w-xs">
-            <RichMathText text={truncateLatexAware(localText, 80)} />
+            {localText ? (
+              <RichMathText text={truncateLatexAware(localText, 80)} />
+            ) : (
+              <span className="italic text-gray-400">Hoja de respuesta</span>
+            )}
           </span>
         </div>
 
@@ -387,40 +392,41 @@ export default function QuestionEditor({
           </div>
 
           {/* Enunciado: unified TipTap editor (context + images + question text) */}
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Enunciado</span>
-              <button
-                type="button"
-                onClick={() => setIsEditingText(!isEditingText)}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-primary hover:bg-primary/5 rounded transition-colors"
-                title={isEditingText ? 'Cerrar editor' : 'Editar enunciado'}
-              >
-                {isEditingText ? (
-                  <><Check className="w-3.5 h-3.5" /><span>Listo</span></>
-                ) : (
-                  <><Pencil className="w-3.5 h-3.5" /><span>Editar</span></>
-                )}
-              </button>
-            </div>
-
-            <div className="p-3">
-              {isEditingText ? (
-                <QuestionTipTapEditor
-                  content={tipTapContent}
-                  onChange={handleUnifiedChange}
-                  onImageUpload={testId ? async (file) => {
-                    const result = await testsAPI.uploadQuestionImage(testId, file);
-                    return result.url;
-                  } : undefined}
-                  placeholder="Escribe el enunciado de la pregunta..."
-                />
-              ) : (
-                <div
-                  className="px-3 py-2 bg-gray-50 rounded-md border border-gray-200 min-h-[2.5rem] cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => setIsEditingText(true)}
+          {/* Hidden in answer-sheet mode (no text) — professor only needs pauta fields */}
+          {localText ? (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200">
+                <span className="text-sm font-medium text-gray-700">Enunciado</span>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingText(!isEditingText)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-primary hover:bg-primary/5 rounded transition-colors"
+                  title={isEditingText ? 'Cerrar editor' : 'Editar enunciado'}
                 >
-                  {localText ? (
+                  {isEditingText ? (
+                    <><Check className="w-3.5 h-3.5" /><span>Listo</span></>
+                  ) : (
+                    <><Pencil className="w-3.5 h-3.5" /><span>Editar</span></>
+                  )}
+                </button>
+              </div>
+
+              <div className="p-3">
+                {isEditingText ? (
+                  <QuestionTipTapEditor
+                    content={tipTapContent}
+                    onChange={handleUnifiedChange}
+                    onImageUpload={testId ? async (file) => {
+                      const result = await testsAPI.uploadQuestionImage(testId, file);
+                      return result.url;
+                    } : undefined}
+                    placeholder="Escribe el enunciado de la pregunta..."
+                  />
+                ) : (
+                  <div
+                    className="px-3 py-2 bg-gray-50 rounded-md border border-gray-200 min-h-[2.5rem] cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => setIsEditingText(true)}
+                  >
                     <>
                       {/* Show standalone image for backward compat */}
                       {localImageUrl && !localText.includes('![') && (
@@ -433,13 +439,11 @@ export default function QuestionEditor({
                       )}
                       <RichMathText text={localText} className="text-gray-900" />
                     </>
-                  ) : (
-                    <span className="text-gray-400 italic">Sin texto de pregunta</span>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {/* Campos específicos por tipo */}
           <div className="border-t border-gray-200 pt-4">
@@ -492,7 +496,58 @@ export default function QuestionEditor({
             )}
 
             {/* MÚLTIPLE OPCIÓN */}
-            {localType === QuestionType.MULTIPLE_CHOICE && (
+            {localType === QuestionType.MULTIPLE_CHOICE && (() => {
+              // Answer-sheet mode: options are just letters (e.g. ["A","B","C","D"])
+              const isAnswerSheet = localOptions.every(opt => /^[A-H]$/.test(opt.trim()));
+
+              if (isAnswerSheet) {
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Respuesta correcta:
+                    </label>
+                    <div className="flex gap-3 mb-3">
+                      {localOptions.map((opt, idx) => {
+                        const letter = opt.trim();
+                        const isCorrect = localCorrectAnswer === letter;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleCorrectAnswerChange(letter)}
+                            className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center text-sm font-bold ${
+                              isCorrect
+                                ? 'border-green-500 bg-green-500 text-white shadow-md'
+                                : 'border-gray-300 bg-white text-gray-600 hover:border-green-300 hover:bg-green-50'
+                            }`}
+                          >
+                            {letter}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-500">Alternativas:</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="8"
+                        value={localOptions.length}
+                        onChange={(e) => {
+                          const count = Math.max(2, Math.min(8, Number(e.target.value)));
+                          const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+                          const newOptions = letters.slice(0, count);
+                          setLocalOptions(newOptions);
+                          onChange({ options: newOptions });
+                        }}
+                        className="w-14 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                      />
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-medium text-gray-700">
@@ -634,7 +689,8 @@ export default function QuestionEditor({
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
 
             {/* DESARROLLO */}
             {localType === QuestionType.DEVELOPMENT && (

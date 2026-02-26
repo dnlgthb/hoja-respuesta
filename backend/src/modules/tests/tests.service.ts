@@ -2,7 +2,7 @@
 import prisma from '../../config/database';
 import { TestStatus, QuestionType } from '../../../generated/prisma';
 import { uploadPDF } from '../../config/storage';
-import { analyzeDocument, analyzeDocumentMathpix, analyzeRubric as analyzeRubricAI, ProgressCallback } from '../../config/openai';
+import { analyzeDocument, analyzeDocumentMathpix, extractQuestionListMathpix, analyzeRubric as analyzeRubricAI, ProgressCallback } from '../../config/openai';
 import { env } from '../../config/env';
 import { calculateChileanGrade, calculateGradeStats } from '../../utils/gradeCalculator';
 import { splitPdfIntoChunks } from '../../utils/pdfExtractor';
@@ -372,8 +372,25 @@ export class TestsService {
     let questions: any[];
 
     if (useMathpix) {
-      console.log('📄 Using Mathpix OCR for PDF analysis');
-      questions = await analyzeDocumentMathpix(fileBuffer, onProgress, testId);
+      // Answer-sheet pipeline: only extract question numbers and types
+      console.log('📄 Using Mathpix OCR — answer sheet mode (question list only)');
+      const questionList = await extractQuestionListMathpix(fileBuffer, onProgress);
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+      questions = questionList.map(q => ({
+        number: q.number,
+        type: q.type,
+        text: '',
+        options: q.type === 'MULTIPLE_CHOICE'
+          ? letters.slice(0, q.options_count || 4)
+          : null,
+        correct_answer: null,
+        context: q.section || null,
+        has_image: false,
+        image_url: null,
+        image_description: null,
+        image_page: null,
+        points: 1,
+      }));
     } else {
       console.log('📄 Using GPT-4o Vision for PDF analysis (Mathpix not configured)');
       const chunks = await splitPdfIntoChunks(fileBuffer, 5);
@@ -1537,7 +1554,7 @@ export class TestsService {
       question_number: q.question_number,
       question_label: q.question_label,
       type: q.type,
-      question_text: q.question_text,
+      question_text: q.question_text || `Pregunta ${q.question_label || q.question_number}`,
       points: Number(q.points),
     }));
 

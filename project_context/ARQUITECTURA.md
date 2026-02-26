@@ -68,12 +68,18 @@ hoja-respuesta/
 │       ├── components/
 │       │   ├── Navbar.tsx
 │       │   ├── ProtectedRoute.tsx
-│       │   ├── QuestionEditor.tsx  # Editor preguntas (preview-first + toggle edición)
+│       │   ├── QuestionEditor.tsx  # Editor preguntas (TipTap unified editor)
 │       │   ├── TestCard.tsx
 │       │   ├── MathField.tsx      # Editor interactivo MathLive (LaTeX)
 │       │   ├── MathToolbar.tsx    # Barra botones math reutilizable (fracción, raíz, etc.)
 │       │   ├── MathDisplay.tsx    # Render LaTeX puro (MathLive)
-│       │   └── RichMathText.tsx   # Render texto mixto + LaTeX ($...$)
+│       │   ├── RichMathText.tsx   # Render texto mixto + LaTeX ($...$)
+│       │   └── tiptap/           # Editor TipTap para texto de preguntas
+│       │       ├── QuestionTipTapEditor.tsx  # Editor principal (KaTeX math + imágenes)
+│       │       ├── TipTapToolbar.tsx         # Toolbar: math symbols + imagen
+│       │       ├── MathEditPopup.tsx         # Popup MathField al click en fórmula
+│       │       ├── serializers.ts            # Plain text ↔ TipTap HTML (bidireccional)
+│       │       └── tiptap-editor.css         # Estilos KaTeX + editor
 │       ├── lib/
 │       │   ├── api.ts           # Axios + interceptores
 │       │   └── auth.ts          # JWT en localStorage
@@ -93,7 +99,7 @@ hoja-respuesta/
 | **Course** | id, teacher_id, name, year | → teacher, students[], tests[] |
 | **CourseStudent** | id, course_id, student_name, student_email? | → course, student_attempts[] |
 | **Test** | id, teacher_id, course_id?, title, status, access_code, pdf_url, rubric_pdf_url | → teacher, course?, questions[], student_attempts[] |
-| **Question** | id, test_id, question_number, question_label?, type, question_text, points, options, correct_answer, correction_criteria, context?, has_image, image_description?, image_page? | → test, answers[] |
+| **Question** | id, test_id, question_number, question_label?, type, question_text, points, options, correct_answer, correction_criteria, context?, has_image, image_description?, image_page?, **image_url?** | → test, answers[] |
 | **StudentAttempt** | id, test_id, course_student_id?, student_name, student_email?, device_token, results_token, status, is_unlocked | → test, course_student?, answers[] |
 | **Answer** | id, student_attempt_id, question_id, answer_value, points_earned, ai_feedback | → student_attempt, question |
 
@@ -166,8 +172,9 @@ hoja-respuesta/
 | Servicio | Uso | Config |
 |----------|-----|--------|
 | **Neon** | PostgreSQL | `DATABASE_URL` |
-| **Supabase Storage** | PDFs (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
-| **OpenAI** | Vision API: análisis PDF → preguntas (LaTeX, imágenes), análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
+| **Supabase Storage** | PDFs + imágenes de preguntas (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| **Mathpix** | OCR especializado en matemáticas (Phase 1: PDF → .mmd con LaTeX perfecto) | `MATHPIX_APP_ID`, `MATHPIX_APP_KEY` |
+| **OpenAI** | Phase 2: structuring OCR → JSON, análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
 | **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
 | **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
 | **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
@@ -188,14 +195,14 @@ hoja-respuesta/
 │                 │ ◀──────────────────  │                 │
 └─────────────────┘    JSON response     └─────────────────┘
                                                   │
-                    ┌─────────────────────────────┼─────────────────────────────┐
-                    │                             │                             │
-                    ▼                             ▼                             ▼
-           ┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-           │  Neon           │           │  Supabase       │           │  OpenAI         │
-           │  PostgreSQL     │           │  Storage        │           │  GPT-4o-mini    │
-           │                 │           │  (PDFs)         │           │  (análisis)     │
-           └─────────────────┘           └─────────────────┘           └─────────────────┘
+                    ┌──────────────┼──────────────┼──────────────┐
+                    │              │              │              │
+                    ▼              ▼              ▼              ▼
+           ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+           │  Neon        │ │  Supabase    │ │  OpenAI      │ │  Mathpix     │
+           │  PostgreSQL  │ │  Storage     │ │  GPT-4o-mini │ │  OCR math    │
+           │              │ │  (PDFs+imgs) │ │  (estructura)│ │  (Phase 1)   │
+           └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
 ### Flujo: Crear prueba con IA
@@ -203,11 +210,12 @@ hoja-respuesta/
 1. Profesor sube PDF → `POST /api/tests/:id/upload-pdf`
 2. PDF se guarda en Supabase Storage → retorna URL
 3. Profesor pide análisis → `POST /api/tests/:id/analyze-pdf`
-4. Backend convierte PDF a base64
-5. PDF se envía directo a GPT-4o-mini Vision API (el modelo "ve" las páginas como imágenes)
-6. IA retorna JSON con preguntas detectadas (incluyendo LaTeX para fórmulas, metadata de imágenes, contexto para preguntas anidadas)
-7. Backend crea registros Question en PostgreSQL (con campos: context, has_image, image_description, image_page)
-8. Frontend muestra editor de preguntas con renderizado LaTeX (RichMathText)
+4. **Phase 1 (OCR):** PDF se envía a Mathpix API → retorna .mmd con LaTeX perfecto + imágenes como `![](cdn.mathpix.com/...)`
+5. **Phase 1.5 (Imágenes):** `extractAndRehostImages()` descarga imágenes del CDN de Mathpix → sube a Supabase Storage (permanente) → reemplaza URLs en el texto
+6. **Phase 2 (Estructura):** Texto .mmd se divide en chunks → gpt-4o-mini estructura en JSON con campos: text, type, options, image_url, etc.
+7. Backend crea registros Question en PostgreSQL (con campos: context, has_image, image_description, image_page, **image_url**)
+8. Frontend muestra editor de preguntas con renderizado LaTeX (RichMathText) + imágenes inline
+9. **Fallback:** Si Mathpix no está configurado, usa GPT-4o Vision (PDF directo como base64, sin imágenes extraídas)
 
 ### Flujo: Cargar pauta de corrección con IA
 
@@ -265,6 +273,9 @@ Backend → authMiddleware verifica JWT → req.teacherId ────┘
 DATABASE_URL=postgresql://...
 JWT_SECRET=...
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+MATHPIX_APP_ID=...              # OCR matemático (opcional, fallback: GPT-4o Vision)
+MATHPIX_APP_KEY=...
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_ANON_KEY=...
 RESEND_API_KEY=re_...

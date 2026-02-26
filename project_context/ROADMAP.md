@@ -174,6 +174,15 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Aplica tanto a análisis de pruebas como a análisis de pautas de corrección
   - Nuevos campos en Question: context, has_image, image_description, image_page
   - Cero dependencias nativas nuevas (sin canvas, sin ImageMagick)
+- [x] Migración a Mathpix OCR + extracción de imágenes:
+  - Phase 1: Mathpix API para OCR especializado en matemáticas (LaTeX perfecto, $0.005/pág)
+  - Phase 1.5: Re-hosting de imágenes de Mathpix CDN (~30 días expiración) a Supabase Storage (permanente)
+  - Phase 2: gpt-4o-mini estructura .mmd en JSON con image_url por pregunta
+  - Nuevo campo: `image_url` en Question (URL Supabase permanente)
+  - Frontend: imágenes inline en QuestionEditor (profesor) y vista de prueba (estudiante)
+  - Fallback: si Mathpix no configurado, usa GPT-4o Vision (sin imágenes extraídas)
+  - Tiempo total: ~2 min para PAES 56 páginas (vs ~10 min con GPT-4o)
+  - Tested: 65 preguntas, 18 con imágenes, todas en Supabase permanente
 - [x] Renderizado LaTeX en frontend (RichMathText):
   - Componente que parsea texto mixto con delimitadores $...$ y $$...$$
   - Renderiza fórmulas usando MathLive (convertLatexToMarkup)
@@ -194,11 +203,21 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Fix: insertSymbol manipula .value directamente (no .insert()) para evitar que \text{} bloquee inserciones math
   - Line wrapping en MathField: CSS inyectado en shadow DOM para mostrar texto completo sin scroll horizontal
   - Fix: normalización \\% → \% en frontend y backend para porcentajes double-escaped por la IA
+- [x] Editor TipTap unificado para texto de preguntas:
+  - Reemplaza textarea + MathField por TipTap rich text editor con KaTeX math inline
+  - Contexto + texto de pregunta unificados en un solo campo (context → null al guardar)
+  - Click en fórmula renderizada → popup MathField para edición visual
+  - Imágenes embebidas inline con drag-drop upload a Supabase
+  - Toolbar con símbolos math + botón insertar imagen
+  - Serialización bidireccional texto plano ↔ TipTap HTML (sin cambios de BD)
+  - Prevención de cambios fantasma: normalización round-trip (imágenes + $ escaping)
+  - Probado con PAES 65 preguntas: math + imágenes + contexto, zero phantom changes
 
 ---
 
 ## Pendientes Menores / Deuda Técnica
 
+- [ ] **QuickLaTeX tabla `+` bug**: `renderLatexTableToImage()` envía LaTeX via `URLSearchParams` que codifica espacios como `+`. QuickLaTeX los muestra literal (`+Hecho+histórico+`). Fix con `encodeURIComponent` no funcionó. Investigar alternativas (POST raw body, otra API de renderizado LaTeX).
 - [ ] Página de resultados para estudiantes (acceso por link único)
 - [ ] Generación de PDF con resultados
 - [ ] Pruebas creadas antes del fix de alternativas necesitan corrección manual

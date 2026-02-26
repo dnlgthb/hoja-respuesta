@@ -72,6 +72,17 @@ export interface Question {
   correction_criteria?: string; // Backend usa snake_case
   createdAt?: string;
   created_at?: string; // Backend usa snake_case
+  // Campos de imagen
+  hasImage?: boolean;
+  has_image?: boolean;
+  imageDescription?: string | null;
+  image_description?: string | null;
+  imagePage?: number | null;
+  image_page?: number | null;
+  imageUrl?: string | null;
+  image_url?: string | null;
+  // Contexto para preguntas anidadas
+  context?: string | null;
   // Opciones para preguntas MATH
   requireUnits?: boolean;
   require_units?: boolean;

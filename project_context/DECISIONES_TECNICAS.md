@@ -15,7 +15,8 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 | Base de datos | PostgreSQL (Neon) | Escalable, portable, tier gratuito generoso |
 | Storage | Supabase Storage | Simple, URLs públicas, tier gratuito |
 | Email | Resend | 3,000 emails/mes gratis, API simple |
-| IA | OpenAI GPT-4o-mini | Barato (~$0.01/análisis), rápido, preciso |
+| OCR Matemático | Mathpix API | Especializado en LaTeX, $0.005/pág, perfecto para fórmulas |
+| IA Estructuración | OpenAI GPT-4o-mini | Barato (~$0.01/análisis), rápido, preciso |
 | Hosting Frontend | Vercel | Gratis, optimizado para Next.js |
 | Hosting Backend | Railway | $5/mes, simple, templates listos |
 
@@ -156,29 +157,43 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 ---
 
-## Migración a Vision API (PDF directo)
+## Migración a Vision API (PDF directo) → Luego a Mathpix
 
-**Decisión:** Enviar PDFs directamente a GPT-4o-mini como archivos base64 en lugar de extraer texto con pdfjs-dist.
+**Evolución del pipeline de extracción de PDF:**
 
-**Problema resuelto:** La extracción de texto con pdfjs-dist perdía:
-- Expresiones matemáticas (fracciones, raíces, exponentes aparecían como cuadrados rotos)
-- Imágenes/diagramas/gráficos se perdían completamente
-- Contexto de preguntas anidadas (enunciados padre)
+### Fase A: pdfjs-dist (descartada)
+- Extraía texto plano del PDF
+- **Problema:** Perdía fórmulas, imágenes, diagramas completamente
 
-**Enfoque elegido:** PDF directo a OpenAI (sin librería de conversión a imágenes)
+### Fase B: GPT-4o Vision (fallback actual)
+- PDF directo a OpenAI como base64
+- **Problema:** Errores **sistemáticos** en OCR matemático (no random):
+  - `$(888)^2$` → `$(2^2·888)$`, `$14^2$` → `$2^2$`, `$\sqrt{2^6}$` → `$6$`
+  - Probado: prompt changes, voting (2-3 OCR calls), temperature=0 — nada funcionó
+- Sigue como fallback si Mathpix no está configurado
 
-**Alternativas descartadas:**
+### Fase C: Mathpix + gpt-4o-mini (actual, elegida)
+- **Phase 1 (Mathpix OCR):** PDF completo → API Mathpix → .mmd con LaTeX perfecto + imágenes recortadas con coordenadas pixel-perfect
+- **Phase 1.25 (Normalización figuras):** `\begin{figure}` blocks + standalone `\includegraphics` → `![caption](URL)` markdown unificado
+- **Phase 1.3 (Merge composites):** Heurística Y-overlap agrupa crops que se superponen verticalmente en la misma página → single bounding-box image. Usa Union-Find. Padding=120px. Reemplazó GPT-4o Vision (que era demasiado conservador e inconsistente).
+- **Phase 1.5 (Re-hosting imágenes):** Descarga `![](cdn.mathpix.com/...)` → sube a Supabase Storage → URLs permanentes (CDN Mathpix expira en ~30 días)
+- **Phase 1.6 (Tablas → imágenes):** `\begin{tabular}` → PNG via QuickLaTeX → Supabase. ⚠️ Bug conocido: `URLSearchParams` codifica espacios como `+` que QuickLaTeX muestra literal. Fix con `encodeURIComponent` no funcionó, pendiente.
+- **Phase 2 (gpt-4o-mini):** .mmd con URLs permanentes → JSON estructurado con image_url por pregunta
+- Costo: $0.005/pág OCR + ~$0.01 structuring = ~$0.30 por PAES 56 páginas
+- Tiempo: ~2 min (vs ~10 min con GPT-4o Vision)
+
+**Alternativas descartadas para imágenes:**
 
 | Solución | Motivo de descarte |
 |----------|-------------------|
-| `pdf-to-img` | Dependencia nativa de canvas, problemas en Railway |
-| `pdf2pic` | Requiere GraphicsMagick/ImageMagick en el servidor |
-| pdfjs-dist renderizar a canvas | Requiere `canvas` npm (nativo), complicado en producción |
-| **PDF directo a OpenAI** | ✅ Elegida: cero dependencias nativas, OpenAI convierte internamente |
+| `pdf-to-img` + sharp (server-side rendering) | Dependencias nativas, problemas en Railway, ya descartado antes |
+| Crop por zonas (top/middle/bottom) | Impreciso vs coordenadas pixel-perfect de Mathpix |
+| Mantener URLs de Mathpix CDN | Expiran en ~30 días |
+| Supabase subfolder `images/` | RLS policy bloqueó uploads; usar path plano `img_{testId}_{hash}` |
 
-**Campos nuevos en Question:** `context` (enunciado padre), `has_image`, `image_description`, `image_page`
+**Campos en Question:** `context`, `has_image`, `image_description`, `image_page`, **`image_url`** (URL Supabase permanente)
 
-**Aplica a:** Análisis de pruebas (`analyzeDocument`) y análisis de pautas (`analyzeRubric`)
+**Aplica a:** Análisis de pruebas (`analyzeDocumentMathpix`). Pautas siguen usando GPT-4o-mini Vision directo.
 
 ---
 
@@ -205,6 +220,8 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 - axios → Cliente HTTP
 - xlsx → Parseo de archivos Excel/CSV (backend)
 - mathlive → Editor de expresiones matemáticas (LaTeX)
+- @tiptap/react + extensions → Editor rich text para texto de preguntas (math KaTeX + imágenes)
+- katex → Renderizado de fórmulas inline en TipTap editor
 
 ---
 
@@ -296,18 +313,60 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 **Patrón implementado:**
 - **Modo preview (default):** Solo muestra RichMathText renderizado — el profesor ve la pregunta como la verá el estudiante
-- **Modo edición (toggle):** Click en ícono lápiz o en el preview → abre MathField WYSIWYG (por defecto) o textarea
-- Toggle "Tx/𝑓x" permite cambiar entre MathField y textarea
+- **Modo edición (toggle):** Click en ícono lápiz o en el preview → abre **TipTap rich editor** con KaTeX math renderizado inline + imágenes
 - Click en ícono check → colapsa de vuelta al preview
 - Estados se resetean al colapsar la pregunta
 
-**Aplica a:**
-- Texto de la pregunta (toggle `isEditingText`, `textMathMode` default true)
-- Opciones de alternativas (toggle `isEditingOptions`, `optionMathMode[]` auto-detect por opción)
-- Conversión automática texto mixto ↔ `\text{}` para MathField
-- Radios de respuesta correcta funcionan en ambos modos (no necesita abrir editor)
+**Editor TipTap (texto de pregunta):**
+- Contexto + texto de pregunta unificados en un solo editor TipTap
+- Al guardar, contexto se borra (`context: null`) y todo se almacena en `question_text`
+- Math renderizado inline con KaTeX (click para editar con MathField popup)
+- Imágenes embebidas inline (drag-drop upload a Supabase)
+- Toolbar con símbolos math (reutiliza `MATH_TOOLBAR_BUTTONS`) + botón insertar imagen
+- Sin cambios de BD — mismo formato texto plano con `$...$`, `$$...$$`, `![](url)`
+
+**Opciones de alternativas (sin cambio):**
+- Toggle edición con lápiz/check
+- MathField compact o input texto por opción
+- Auto-detect: opciones con `$` inician en modo MathField
+- Radios de respuesta correcta funcionan en ambos modos
 
 **No aplica a (ya compactos):**
 - TRUE_FALSE: solo 2 radios
 - DEVELOPMENT: solo textarea de criterios
 - MATH: MathField ya es WYSIWYG
+
+---
+
+## Editor TipTap para Preguntas
+
+**Decisión:** Reemplazar textarea + MathField por TipTap rich text editor para el texto de preguntas
+
+**Problema resuelto:** El editor anterior tenía 3 secciones separadas (contexto, imagen, texto) lo que causaba:
+- Imágenes duplicadas al re-abrir editor
+- LaTeX estructural entre campos
+- Renderizado inconsistente entre edición y preview
+
+**Solución: Un solo editor TipTap que unifica todo:**
+
+**Stack:** `@tiptap/react` + `@tiptap/starter-kit` + `@tiptap/extension-mathematics` (KaTeX) + `@tiptap/extension-image`
+
+**Archivos:**
+| Archivo | Propósito |
+|---------|-----------|
+| `tiptap/QuestionTipTapEditor.tsx` | Editor principal TipTap con math + imágenes |
+| `tiptap/TipTapToolbar.tsx` | Toolbar: símbolos math + insertar imagen |
+| `tiptap/MathEditPopup.tsx` | Popup MathField al click en fórmula KaTeX |
+| `tiptap/serializers.ts` | Conversión bidireccional: texto plano ↔ TipTap HTML |
+| `tiptap/tiptap-editor.css` | Estilos KaTeX + nodos math/imagen |
+
+**Serialización (round-trip lossless):**
+- `plainTextToTipTapHtml()`: `$...$` → inline-math KaTeX, `$$...$$` → block-math, `![](url)` → img block
+- `tipTapDocToPlainText()`: JSON → texto plano con delimitadores originales
+- `normalizeForTipTap()`: Fuerza `\n\n` alrededor de imágenes (TipTap las trata como bloques)
+- `normalizeForComparison()`: También normaliza `\$` ↔ `$` para prevenir "cambios fantasma"
+
+**Phantom change prevention:**
+- TipTap's round-trip introduce diferencias: `\n` → `\n\n` alrededor de imágenes, `$` → `\$` en texto
+- `normalizeForComparison()` se usa en todas las comparaciones para que diferencias cosméticas no disparen "cambios sin guardar"
+- Probado con 10+ preguntas incluyendo contexto con imágenes: cero cambios fantasma

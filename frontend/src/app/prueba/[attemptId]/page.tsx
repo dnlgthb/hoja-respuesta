@@ -27,8 +27,15 @@ interface Question {
   questionLabel?: string;
   type: 'TRUE_FALSE' | 'MULTIPLE_CHOICE' | 'DEVELOPMENT' | 'MATH';
   questionText: string;
+  context?: string | null;
   points: number;
   options: string[] | null;
+  imageUrl?: string | null;
+  image_url?: string | null;
+  hasImage?: boolean;
+  has_image?: boolean;
+  imageDescription?: string | null;
+  image_description?: string | null;
 }
 
 interface AttemptData {
@@ -731,6 +738,24 @@ function QuestionCard({ question, value, onChange, justification, onJustificatio
               {question.points} {question.points === 1 ? 'punto' : 'puntos'}
             </span>
           </div>
+          {/* Contexto introductorio */}
+          {question.context && (
+            <div className="text-gray-600 text-sm mb-1">
+              <RichMathText text={question.context} />
+            </div>
+          )}
+          {/* Imagen de la pregunta (entre contexto y pregunta) */}
+          {(question.imageUrl || question.image_url) && (
+            <div className="my-2">
+              <img
+                src={question.imageUrl || question.image_url || ''}
+                alt={question.imageDescription || question.image_description || 'Imagen de la pregunta'}
+                className="max-w-full max-h-72 object-contain rounded border border-gray-200"
+                loading="lazy"
+              />
+            </div>
+          )}
+          {/* Texto de la pregunta */}
           <div className="text-gray-700">
             <RichMathText text={question.questionText} />
           </div>

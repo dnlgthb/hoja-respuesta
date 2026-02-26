@@ -745,8 +745,17 @@ export function postProcessMathText(text: string): string {
 function processTextSegments(text: string, processor: (segment: string) => string): string {
   const parts: string[] = [];
   let i = 0;
+  const maxIterations = text.length * 2 + 100; // Safety: can't need more iterations than 2x text length
+  let iterations = 0;
 
   while (i < text.length) {
+    iterations++;
+    if (iterations > maxIterations) {
+      console.error(`  ⚠️ processTextSegments: safety limit reached (${maxIterations} iterations), returning text as-is`);
+      console.error(`  ⚠️ Text (first 200 chars): ${text.substring(0, 200)}`);
+      return text;
+    }
+
     // Check for $$ (display math)
     if (text[i] === '$' && i + 1 < text.length && text[i + 1] === '$') {
       const end = text.indexOf('$$', i + 2);
@@ -755,6 +764,10 @@ function processTextSegments(text: string, processor: (segment: string) => strin
         i = end + 2;
         continue;
       }
+      // Unclosed $$ — treat as plain text and advance past it
+      parts.push(processor('$$'));
+      i += 2;
+      continue;
     }
 
     // Check for $ (inline math)
@@ -765,6 +778,10 @@ function processTextSegments(text: string, processor: (segment: string) => strin
         i = end + 1;
         continue;
       }
+      // Unclosed $ — treat as plain text and advance past it
+      parts.push(processor('$'));
+      i += 1;
+      continue;
     }
 
     // Find next $

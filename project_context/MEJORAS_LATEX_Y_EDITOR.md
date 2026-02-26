@@ -51,12 +51,12 @@
 
 Se implementó un patrón **preview-first** en `QuestionEditor.tsx`:
 
-**Texto de la pregunta:**
+**Texto de la pregunta (actualizado a TipTap — ver Problema 6):**
 - Por defecto muestra solo el `RichMathText` renderizado (fondo gris claro, clickeable)
 - Botón lápiz (Pencil icon) en la esquina para alternar a modo edición
-- Modo edición: **MathField WYSIWYG** por defecto (toolbar + editor gráfico de math)
-- Toggle "Tx/𝑓x" permite cambiar entre MathField (WYSIWYG) y textarea (LaTeX crudo)
-- Conversión automática: texto mixto `"texto $math$ texto"` ↔ `\text{texto }math\text{ texto}` para MathField
+- Modo edición: **TipTap rich editor** con KaTeX math inline + imágenes
+- Contexto y texto de pregunta unificados en un solo campo
+- Click en fórmula renderizada → popup MathField para edición visual
 - Botón check (Check icon) para volver al modo preview
 - Click en el preview también abre modo edición
 
@@ -75,11 +75,10 @@ Se implementó un patrón **preview-first** en `QuestionEditor.tsx`:
 - MATH: MathField ya es WYSIWYG
 
 **Estados de control:**
-- `isEditingText` (boolean, default false) — toggle para texto de pregunta
+- `isEditingText` (boolean, default false) — toggle para texto de pregunta (TipTap editor)
 - `isEditingOptions` (boolean, default false) — toggle para alternativas
-- `textMathMode` (boolean, default true) — MathField vs textarea para texto
 - `optionMathMode` (boolean[], auto-detect) — MathField vs input por opción
-- Ambos edit states se resetean a false cuando la pregunta se colapsa (`isExpanded = false`)
+- Edit states se resetean a false cuando la pregunta se colapsa (`isExpanded = false`)
 
 **Problema resuelto: inserción de math dentro de \text{}:**
 - MathLive's `.insert()` trata LaTeX como texto literal cuando el cursor está dentro de un bloque `\text{}`
@@ -112,23 +111,84 @@ Se implementó un patrón **preview-first** en `QuestionEditor.tsx`:
 
 ---
 
-## Problema 3: Calidad de extracción de la IA
+## Problema 3: Calidad de extracción de la IA (RESUELTO con Mathpix)
 
-### Síntomas
-- La IA a veces no transcribe bien las expresiones matemáticas del PDF
-- Ejemplo: Q17 tenía `$2^{2} + \frac{5}{1} - 14$` pero ninguna opción coincide (probablemente la expresión original era diferente)
-- Opciones sin delimitadores `$` (ya mitigado con post-procesamiento)
+### Problema original
+- GPT-4o-mini Vision tenía errores **sistemáticos** en OCR matemático
+- Ejemplo: `$(888)^2$` → `$(2^2·888)$`, exponentes y raíces mal leídos consistentemente
+- Prompt changes, voting, temperature=0 no ayudaron
 
-### Causas
-- GPT-4o-mini tiene limitaciones en la interpretación visual de PDFs matemáticos
-- El prompt pide usar `$...$` pero la IA no siempre cumple consistentemente
-- PDFs escaneados o con fuentes matemáticas especiales son más difíciles
+### Solución: Mathpix OCR (Phase 1)
+- Mathpix es OCR especializado en matemáticas → LaTeX perfecto para fórmulas
+- gpt-4o-mini solo estructura el texto (Phase 2), no hace OCR
+- Costo: $0.005/pág (~$0.28 para PAES 56 páginas)
+- Tiempo: ~10-15s OCR + ~90s structuring = ~2 min total
 
-### Mejoras posibles
-1. **Mejorar el prompt**: Agregar más ejemplos de transcripción correcta, especialmente para casos complejos
-2. **Modelo más potente**: Usar GPT-4o (no mini) para pruebas con mucho contenido matemático
-3. **Validación de LaTeX**: Después de la extracción, intentar parsear cada expresión y marcar errores
-4. **Feedback loop**: Cuando el profesor corrige una expresión, guardar before/after para mejorar el prompt
+---
+
+## Problema 5: Imágenes de preguntas (RESUELTO)
+
+### Problema original
+- Preguntas con gráficos/diagramas/tablas no tenían imagen visible
+- Solo metadata (has_image, image_description, image_page) — sin URL real
+
+### Solución: Mathpix CDN → Supabase Storage
+- Mathpix OCR retorna `![](https://cdn.mathpix.com/cropped/...)` con coordenadas pixel-perfect
+- CDN URLs expiran en ~30 días → `extractAndRehostImages()` descarga y sube a Supabase
+- Upload path: `img_{testId}_{hash}` (flat, sin subfolder — evita RLS policy issues)
+- Phase 2 prompt mapea `![](url)` → campo `image_url` + `has_image: true` + `image_description`
+- Frontend muestra `<img>` inline en QuestionEditor (profesor) y vista prueba (estudiante)
+
+### Archivos modificados
+- `backend/prisma/schema.prisma` — campo `image_url String? @db.Text`
+- `backend/src/config/openai.ts` — `extractAndRehostImages()`, prompt actualizado, `analyzeDocumentMathpix(testId)`
+- `backend/src/config/storage.ts` — `uploadImage()` para Supabase
+- `backend/src/modules/tests/tests.service.ts` — pasa testId, guarda image_url
+- `backend/src/modules/student/student.service.ts` — incluye image_url en respuesta API (3 lugares)
+- `frontend/src/types/index.ts` — campos imageUrl/image_url en Question
+- `frontend/src/components/QuestionEditor.tsx` — render imagen con header + descripción
+- `frontend/src/app/prueba/[attemptId]/page.tsx` — render imagen en vista estudiante
+
+---
+
+## Problema 6: Editor unificado TipTap (RESUELTO)
+
+### Problema original
+- QuestionEditor tenía 3 secciones separadas: contexto (textarea), imagen (upload/URL), texto de pregunta (textarea/MathField)
+- Causaba bugs recurrentes: imágenes duplicadas al re-abrir, LaTeX estructural entre campos, renderizado inconsistente
+- MathField no maneja bien markdown/URLs (mangles `![`, `&`, `_`), así que no podía manejar imágenes inline
+- El contexto y el texto eran campos separados, pero el profesor los quiere editar como uno solo
+
+### Solución: TipTap rich text editor unificado
+
+**Stack:** `@tiptap/react` + `@tiptap/starter-kit` + `@tiptap/extension-mathematics` (KaTeX) + `@tiptap/extension-image` + `@tiptap/extension-placeholder`
+
+**Archivos nuevos:**
+| Archivo | Propósito |
+|---------|-----------|
+| `tiptap/QuestionTipTapEditor.tsx` | Editor principal con math inline (KaTeX) + imágenes |
+| `tiptap/TipTapToolbar.tsx` | Toolbar: reutiliza `MATH_TOOLBAR_BUTTONS` + botón imagen |
+| `tiptap/MathEditPopup.tsx` | Popup floating con MathField al click en fórmula |
+| `tiptap/serializers.ts` | Conversión bidireccional texto plano ↔ TipTap HTML |
+| `tiptap/tiptap-editor.css` | Estilos para KaTeX nodes, imágenes, editor |
+
+**Cambios en QuestionEditor.tsx:**
+- `mergeContextAndText()`: combina contexto + `\n\n` + texto, normalizado para TipTap
+- Al guardar: `context: null` (todo en `question_text`), extrae `image_url` del texto
+- Sección "Enunciado" usa `QuestionTipTapEditor` en modo edición, `RichMathText` en preview
+- Eliminados: `localContext`, `isEditingContext`, `contextTextareaRef`, `textMathMode`
+
+**Serialización (sin cambios de BD):**
+- `plainTextToTipTapHtml()`: `$...$` → `<span data-type="inline-math">`, `$$...$$` → `<div data-type="block-math">`, `![](url)` → `<img>`
+- `tipTapDocToPlainText()`: Reverse — escapa `$` en texto como `\$`
+- `normalizeForTipTap()`: Fuerza `\n\n` alrededor de imágenes (son bloques en TipTap)
+- `normalizeForComparison()`: También normaliza `\$` ↔ `$` para prevenir phantom changes
+
+**Prevención de cambios fantasma (phantom changes):**
+- TipTap round-trip introduce diferencias cosméticas: `\n` → `\n\n` alrededor de imágenes, `$` → `\$`
+- Root cause: DB text tiene literal `\n` (backslash-n) que `cleanDisplayText` no convierte cuando seguido de letra (para proteger comandos LaTeX como `\newline`). Esto une imágenes con texto adyacente en la misma línea.
+- `normalizeForComparison()` normaliza ambos lados antes de comparar en `onUpdate` y `handleUnifiedChange`
+- Probado con 10+ preguntas (PAES 65): zero phantom changes, save/reload funciona correctamente
 
 ---
 
@@ -151,9 +211,14 @@ Se implementó un patrón **preview-first** en `QuestionEditor.tsx`:
 
 | Archivo | Rol |
 |---------|-----|
-| `frontend/src/components/RichMathText.tsx` | Renderiza texto mixto + LaTeX usando MathLive + CSS |
-| `frontend/src/components/MathField.tsx` | Editor WYSIWYG para preguntas tipo MATH, texto de pregunta, y opciones de alternativas (prop `compact`) |
-| `frontend/src/components/MathToolbar.tsx` | Barra de botones math reutilizable |
-| `frontend/src/components/QuestionEditor.tsx` | Editor preview-first de preguntas (profesor): toggle edición con lápiz/check |
-| `backend/src/config/openai.ts` | Prompts de IA, análisis de PDF, rubric batching |
+| `frontend/src/components/RichMathText.tsx` | Renderiza texto mixto + LaTeX usando MathLive + CSS (preview + vista estudiante) |
+| `frontend/src/components/MathField.tsx` | Editor WYSIWYG MathLive para tipo MATH, opciones, y popup de edición TipTap |
+| `frontend/src/components/MathToolbar.tsx` | Barra de botones math reutilizable (exporta `MATH_TOOLBAR_BUTTONS`) |
+| `frontend/src/components/QuestionEditor.tsx` | Editor preview-first: TipTap para enunciado, toggle edición con lápiz/check |
+| `frontend/src/components/tiptap/QuestionTipTapEditor.tsx` | Editor TipTap con KaTeX math inline + imágenes + phantom-change prevention |
+| `frontend/src/components/tiptap/serializers.ts` | Serialización bidireccional texto plano ↔ TipTap HTML + normalización round-trip |
+| `frontend/src/components/tiptap/TipTapToolbar.tsx` | Toolbar: símbolos math + insertar imagen |
+| `frontend/src/components/tiptap/MathEditPopup.tsx` | Popup floating con MathField al click en fórmula KaTeX |
+| `backend/src/config/openai.ts` | Mathpix OCR, image re-hosting, gpt-4o-mini structuring, rubric batching |
+| `backend/src/config/storage.ts` | Supabase Storage: uploadPDF(), uploadImage(), deletePDF() |
 | `backend/src/utils/mathPostProcess.ts` | Fix JSON escapes, repair broken LaTeX, wrap bare commands, Unicode→LaTeX |

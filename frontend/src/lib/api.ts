@@ -220,6 +220,18 @@ export const testsAPI = {
     return streamingAnalysis<AnalyzePDFResponse>(`/api/tests/${id}/analyze-pdf`, file, onProgress);
   },
 
+  // Subir imagen para pregunta
+  uploadQuestionImage: async (testId: string, file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await apiClient.post<{ url: string }>(
+      `/api/tests/${testId}/upload-image`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
   // Analizar pauta de corrección con IA (SSE streaming para progreso)
   analyzeRubric: async (
     id: string,

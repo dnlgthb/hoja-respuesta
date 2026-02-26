@@ -1,11 +1,31 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Question, QuestionType } from '@/types';
 import { Trash2, ChevronUp, ChevronDown, GripVertical, Pencil, Check } from 'lucide-react';
 import MathField from '@/components/MathField';
 import MathToolbar from '@/components/MathToolbar';
 import RichMathText from '@/components/RichMathText';
+import { testsAPI } from '@/lib/api';
+import QuestionTipTapEditor from '@/components/tiptap/QuestionTipTapEditor';
+import { extractFirstImageUrl, normalizeForTipTap, normalizeForComparison } from '@/components/tiptap/serializers';
+
+/** Merge context + question text into a single string, normalized for TipTap round-trip */
+function mergeContextAndText(context: string | null, text: string): string {
+  const merged = context ? context + '\n\n' + text : text;
+  return normalizeForTipTap(merged);
+}
+
+/** Clean display text: fix literal \n, \textdollar from DB */
+function cleanDisplayText(text: string): string {
+  if (!text) return text;
+  // Fix literal \n (backslash+n) → actual newlines
+  text = text.replace(/\\n(?![a-zA-Z])/g, '\n');
+  // Fix \text{\textdollar} → $
+  text = text.replace(/\\text\{\\textdollar\}/g, '\\$');
+  text = text.replace(/\\textdollar/g, '\\$');
+  return text;
+}
 
 /** Truncate text without breaking $...$ LaTeX delimiters */
 function truncateLatexAware(text: string, maxLen: number): string {
@@ -38,6 +58,7 @@ interface QuestionEditorProps {
   question: Question;
   index: number;
   totalQuestions: number;
+  testId?: string;
   onChange: (updatedQuestion: Partial<Question>) => void;
   onDelete: () => void;
   onMoveUp: () => void;
@@ -51,6 +72,7 @@ export default function QuestionEditor({
   question,
   index,
   totalQuestions,
+  testId,
   onChange,
   onDelete,
   onMoveUp,
@@ -61,58 +83,34 @@ export default function QuestionEditor({
 }: QuestionEditorProps) {
   // Usar snake_case del backend como fallback
   const questionLabel = question.questionLabel || question.question_label || String(index + 1);
-  const questionText = question.questionText || question.question_text || '';
+  const questionText = cleanDisplayText(question.questionText || question.question_text || '');
   const questionType = question.questionType || question.type || QuestionType.DEVELOPMENT;
   const correctAnswer = question.correctAnswer || question.correct_answer || '';
   const correctionCriteria = question.correctionCriteria || question.correction_criteria || '';
   const requireUnits = question.requireUnits ?? question.require_units ?? false;
   const unitPenalty = question.unitPenalty ?? question.unit_penalty ?? 0.5;
+  const questionContext = cleanDisplayText(question.context || '') || null;
+  const imageUrl = question.imageUrl || question.image_url || null;
+  const hasImage = question.hasImage || question.has_image || false;
+  const imageDescription = question.imageDescription || question.image_description || null;
 
   const [localLabel, setLocalLabel] = useState(questionLabel);
-  const [localText, setLocalText] = useState(questionText);
+  const [localText, setLocalText] = useState(() => mergeContextAndText(questionContext, questionText));
   const [localType, setLocalType] = useState<QuestionType>(questionType);
   const [localCorrectAnswer, setLocalCorrectAnswer] = useState(correctAnswer);
   const [localCriteria, setLocalCriteria] = useState(correctionCriteria);
   const [localOptions, setLocalOptions] = useState<string[]>(question.options || []);
   const [localPoints, setLocalPoints] = useState(question.points || 1);
+  const [localImageUrl, setLocalImageUrl] = useState(imageUrl || '');
   const [localRequireUnits, setLocalRequireUnits] = useState(requireUnits);
   const [localUnitPenalty, setLocalUnitPenalty] = useState(String(unitPenalty * 100));
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingText, setIsEditingText] = useState(false);
   const [isEditingOptions, setIsEditingOptions] = useState(false);
-  const [textMathMode, setTextMathMode] = useState<boolean>(true);
   const [optionMathMode, setOptionMathMode] = useState<boolean[]>(
     () => (question.options || []).map(opt => /\$/.test(opt))
   );
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const optionInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Insertar LaTeX en el textarea del texto de la pregunta
-  const handleInsertLatex = (latex: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-
-    // Limpiar placeholders #0 de MathToolbar
-    const cleanLatex = latex.replace(/#0/g, '');
-    // Envolver en $...$ si no lo está
-    const wrapped = cleanLatex.startsWith('$') ? cleanLatex : `$${cleanLatex}$`;
-
-    const before = localText.slice(0, start);
-    const after = localText.slice(end);
-    const newText = before + wrapped + after;
-
-    handleTextChange(newText);
-
-    // Restaurar foco y posicionar cursor dentro de la expresión
-    requestAnimationFrame(() => {
-      textarea.focus();
-      const cursorPos = start + wrapped.length;
-      textarea.setSelectionRange(cursorPos, cursorPos);
-    });
-  };
 
   // Insertar LaTeX en un input de opción
   const handleInsertLatexOption = (optionIndex: number, latex: string) => {
@@ -139,74 +137,6 @@ export default function QuestionEditor({
     });
   };
 
-  // Convert mixed text "abc $math$ def" → "\text{abc }math\text{ def}" for MathField
-  const mixedTextToMathLatex = (text: string): string => {
-    if (!text.includes('$')) return text;
-    const trimmed = text.trim();
-    // Pure math: just strip delimiters
-    if (trimmed.startsWith('$') && trimmed.endsWith('$') && !trimmed.slice(1, -1).includes('$')) {
-      return trimmed.slice(1, -1);
-    }
-    const parts: string[] = [];
-    let pos = 0;
-    while (pos < text.length) {
-      const dollarIdx = text.indexOf('$', pos);
-      if (dollarIdx === -1) {
-        const rest = text.slice(pos);
-        if (rest) parts.push(`\\text{${rest}}`);
-        break;
-      }
-      if (dollarIdx > pos) parts.push(`\\text{${text.slice(pos, dollarIdx)}}`);
-      const isDouble = text[dollarIdx + 1] === '$';
-      const openLen = isDouble ? 2 : 1;
-      const closeDelim = isDouble ? '$$' : '$';
-      const closeIdx = text.indexOf(closeDelim, dollarIdx + openLen);
-      if (closeIdx === -1) { parts.push(text.slice(dollarIdx + openLen)); break; }
-      parts.push(text.slice(dollarIdx + openLen, closeIdx));
-      pos = closeIdx + openLen;
-    }
-    return parts.join('');
-  };
-
-  // Convert MathField latex "\text{abc }math\text{ def}" → "abc $math$ def"
-  const mathLatexToMixedText = (latex: string): string => {
-    if (!latex.includes('\\text{')) return latex.trim() ? `$${latex}$` : '';
-    const parts: string[] = [];
-    let pos = 0;
-    while (pos < latex.length) {
-      const textIdx = latex.indexOf('\\text{', pos);
-      if (textIdx === -1) {
-        const rest = latex.slice(pos).trim();
-        if (rest) parts.push(`$${rest}$`);
-        break;
-      }
-      if (textIdx > pos) {
-        const math = latex.slice(pos, textIdx).trim();
-        if (math) parts.push(`$${math}$`);
-      }
-      // Find matching closing brace
-      let depth = 1;
-      let braceEnd = textIdx + 6;
-      while (braceEnd < latex.length && depth > 0) {
-        if (latex[braceEnd] === '{') depth++;
-        if (latex[braceEnd] === '}') { depth--; if (depth === 0) break; }
-        braceEnd++;
-      }
-      parts.push(latex.slice(textIdx + 6, braceEnd));
-      pos = braceEnd + 1;
-    }
-    return parts.join('');
-  };
-
-  const getTextLatex = (text: string): string => {
-    if (!text.includes('$')) return text ? `\\text{${text}}` : '';
-    return mixedTextToMathLatex(text);
-  };
-
-  const handleTextMathChange = (latex: string) => {
-    handleTextChange(mathLatexToMixedText(latex));
-  };
-
   // Strip $ delimiters and A) prefix for MathField (options)
   const getOptionLatex = (option: string): string => {
     let cleaned = option.replace(/^[A-Z]\)\s*/, '').trim();
@@ -231,7 +161,7 @@ export default function QuestionEditor({
 
   useEffect(() => {
     setLocalLabel(questionLabel);
-    setLocalText(questionText);
+    setLocalText(mergeContextAndText(questionContext, questionText));
     setLocalType(questionType);
     setLocalCorrectAnswer(correctAnswer);
     setLocalCriteria(correctionCriteria);
@@ -239,7 +169,8 @@ export default function QuestionEditor({
     setLocalPoints(question.points || 1);
     setLocalRequireUnits(requireUnits);
     setLocalUnitPenalty(String(unitPenalty * 100));
-  }, [questionLabel, questionText, questionType, correctAnswer, correctionCriteria, question.options, question.points, requireUnits, unitPenalty]);
+    setLocalImageUrl(imageUrl || '');
+  }, [questionLabel, questionContext, questionText, questionType, correctAnswer, correctionCriteria, question.options, question.points, requireUnits, unitPenalty, imageUrl]);
 
   // Reset edit states when collapsing
   useEffect(() => {
@@ -249,22 +180,29 @@ export default function QuestionEditor({
     }
   }, [isExpanded]);
 
-  // Auto-focus textarea when entering edit mode (only in text mode)
-  useEffect(() => {
-    if (isEditingText && !textMathMode && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isEditingText, textMathMode]);
-
   const handleLabelChange = (value: string) => {
     setLocalLabel(value);
     onChange({ question_label: value });
   };
 
-  const handleTextChange = (value: string) => {
-    setLocalText(value);
-    onChange({ question_text: value });
-  };
+  // Ref to track what was passed to TipTap (updated after tipTapContent is computed below)
+  const tipTapContentRef = useRef('');
+
+  // Unified change handler for TipTap editor: saves question_text + extracts image_url + clears context
+  const handleUnifiedChange = useCallback((text: string) => {
+    // Skip if normalized text hasn't changed (prevents phantom changes on editor init)
+    const nt = normalizeForComparison(text);
+    if (nt === normalizeForComparison(localText) || nt === normalizeForComparison(tipTapContentRef.current)) return;
+    setLocalText(text);
+    const imgUrl = extractFirstImageUrl(text);
+    onChange({
+      question_text: text,
+      context: null,
+      image_url: imgUrl,
+      has_image: !!imgUrl,
+    });
+    setLocalImageUrl(imgUrl || '');
+  }, [localText, onChange]);
 
   const handleTypeChange = (value: QuestionType) => {
     setLocalType(value);
@@ -330,6 +268,15 @@ export default function QuestionEditor({
       onChange({ unit_penalty: numValue });
     }
   };
+
+  // Prepare content for TipTap: inject standalone image_url into text if not already inline
+  const tipTapContent = useMemo(() => {
+    if (localImageUrl && !localText.includes(localImageUrl)) {
+      return normalizeForTipTap(`![${imageDescription || ''}](${localImageUrl})\n\n${localText}`);
+    }
+    return localText;
+  }, [localText, localImageUrl, imageDescription]);
+  tipTapContentRef.current = tipTapContent;
 
   const typeLabels: Record<QuestionType, string> = {
     [QuestionType.TRUE_FALSE]: 'Verdadero/Falso',
@@ -439,83 +386,59 @@ export default function QuestionEditor({
             </div>
           </div>
 
-          {/* Texto de la pregunta */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Texto de la pregunta
-              </label>
-              <div className="flex items-center gap-1">
-                {isEditingText && (
-                  <button
-                    type="button"
-                    onClick={() => setTextMathMode(prev => !prev)}
-                    className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${
-                      textMathMode
-                        ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100'
-                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
-                    }`}
-                    title={textMathMode ? 'Cambiar a modo texto' : 'Cambiar a editor matemático'}
-                  >
-                    {textMathMode ? 'Tx' : '𝑓x'}
-                  </button>
+          {/* Enunciado: unified TipTap editor (context + images + question text) */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Enunciado</span>
+              <button
+                type="button"
+                onClick={() => setIsEditingText(!isEditingText)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-primary hover:bg-primary/5 rounded transition-colors"
+                title={isEditingText ? 'Cerrar editor' : 'Editar enunciado'}
+              >
+                {isEditingText ? (
+                  <><Check className="w-3.5 h-3.5" /><span>Listo</span></>
+                ) : (
+                  <><Pencil className="w-3.5 h-3.5" /><span>Editar</span></>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setIsEditingText(!isEditingText)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-primary hover:bg-primary/5 rounded transition-colors"
-                  title={isEditingText ? 'Cerrar editor' : 'Editar texto'}
-                >
-                  {isEditingText ? (
-                    <><Check className="w-3.5 h-3.5" /><span>Listo</span></>
-                  ) : (
-                    <><Pencil className="w-3.5 h-3.5" /><span>Editar</span></>
-                  )}
-                </button>
-              </div>
+              </button>
             </div>
 
-            {isEditingText ? (
-              textMathMode ? (
-                <MathField
-                  value={getTextLatex(localText)}
-                  onChange={handleTextMathChange}
-                  placeholder="Escribe la expresión matemática..."
+            <div className="p-3">
+              {isEditingText ? (
+                <QuestionTipTapEditor
+                  content={tipTapContent}
+                  onChange={handleUnifiedChange}
+                  onImageUpload={testId ? async (file) => {
+                    const result = await testsAPI.uploadQuestionImage(testId, file);
+                    return result.url;
+                  } : undefined}
+                  placeholder="Escribe el enunciado de la pregunta..."
                 />
               ) : (
-                <>
-                  <MathToolbar
-                    onInsert={handleInsertLatex}
-                    className="rounded-b-none border-b-0"
-                  />
-                  <textarea
-                    ref={textareaRef}
-                    value={localText}
-                    onChange={(e) => handleTextChange(e.target.value)}
-                    placeholder="Escribe el enunciado de la pregunta..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-t-none rounded-b-md focus:outline-none focus:ring-2 focus:ring-primary text-gray-900"
-                  />
-                  {localText && localText.includes('$') && (
-                    <div className="mt-1 px-3 py-2 bg-blue-50 rounded-md border border-blue-100">
-                      <span className="text-xs text-blue-500 block mb-1">Vista previa:</span>
+                <div
+                  className="px-3 py-2 bg-gray-50 rounded-md border border-gray-200 min-h-[2.5rem] cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => setIsEditingText(true)}
+                >
+                  {localText ? (
+                    <>
+                      {/* Show standalone image for backward compat */}
+                      {localImageUrl && !localText.includes('![') && (
+                        <img
+                          src={localImageUrl}
+                          alt={imageDescription || 'Imagen de la pregunta'}
+                          className="max-w-full max-h-80 object-contain rounded border border-gray-100 mb-2"
+                          loading="lazy"
+                        />
+                      )}
                       <RichMathText text={localText} className="text-gray-900" />
-                    </div>
+                    </>
+                  ) : (
+                    <span className="text-gray-400 italic">Sin texto de pregunta</span>
                   )}
-                </>
-              )
-            ) : (
-              <div
-                className="px-3 py-2 bg-gray-50 rounded-md border border-gray-200 min-h-[2.5rem] cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => setIsEditingText(true)}
-              >
-                {localText ? (
-                  <RichMathText text={localText} className="text-gray-900" />
-                ) : (
-                  <span className="text-gray-400 italic">Sin texto de pregunta</span>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Campos específicos por tipo */}

@@ -16,6 +16,7 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
   const containerRef = useRef<HTMLDivElement>(null);
   const mathfieldRef = useRef<MathfieldElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(false);
 
   useEffect(() => {
     // Importar MathLive dinámicamente (solo cliente)
@@ -58,10 +59,29 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
         onChange(mathfield.value);
       });
 
+      // Arrow up/down: move cursor by visual line instead of math navigation
+      mathfield.addEventListener('keydown', (e: Event) => {
+        const ke = e as KeyboardEvent;
+        if (ke.key === 'ArrowUp' || ke.key === 'ArrowDown') {
+          try {
+            const mf = mathfield as any;
+            const caret = mf.caretPoint;
+            if (caret) {
+              const fontSize = parseFloat(getComputedStyle(mathfield).fontSize) || 18;
+              const lineHeight = fontSize * 1.5;
+              const dy = ke.key === 'ArrowUp' ? -lineHeight : lineHeight;
+              mf.setCaretPoint(caret.x, caret.y + dy);
+              ke.preventDefault();
+              ke.stopPropagation();
+            }
+          } catch { /* fallback to default behavior */ }
+        }
+      });
+
       containerRef.current.appendChild(mathfield);
       mathfieldRef.current = mathfield;
 
-      // Inject line-wrapping CSS into shadow DOM (MathLive defaults to nowrap)
+      // Inject line-wrapping CSS + remove blue \text{} highlight into shadow DOM
       requestAnimationFrame(() => {
         if (mathfield.shadowRoot) {
           const wrapStyle = document.createElement('style');
@@ -70,7 +90,7 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
             .ML__fieldcontainer { overflow: visible !important; }
             .ML__latex { white-space: normal !important; flex: 1 1 100% !important; min-width: 0 !important; }
             .ML__base { white-space: normal !important; width: 100% !important; }
-            .ML__text { white-space: normal !important; }
+            .ML__text { white-space: normal !important; background: transparent !important; background-color: transparent !important; }
           `;
           mathfield.shadowRoot.appendChild(wrapStyle);
         }
@@ -128,20 +148,36 @@ export default function MathField({ value, onChange, placeholder, disabled, comp
         <p className="text-sm text-gray-500 mb-2">{placeholder}</p>
       )}
 
-      {/* Barra de herramientas */}
-      <div className={`flex flex-wrap gap-1 ${compact ? 'p-1.5' : 'p-2'} bg-gray-50 border border-gray-200 rounded-t-lg border-b-0`}>
-        {toolbarButtons.map((btn, i) => (
-          <button
-            key={i}
-            type="button"
-            title={btn.title}
-            disabled={disabled}
-            className={`${compact ? 'px-1.5 py-0.5 text-xs min-w-[26px]' : 'px-2 py-1 text-sm min-w-[32px]'} bg-white border border-gray-300 rounded hover:bg-teal-500 hover:text-white hover:border-teal-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-current disabled:hover:border-gray-300`}
-            onClick={() => insertSymbol(btn.latex)}
-          >
-            {btn.label}
-          </button>
-        ))}
+      {/* Barra de herramientas (colapsable) */}
+      <div className={`flex items-center ${compact ? 'p-1.5' : 'p-1.5 px-2'} bg-gray-50 border border-gray-200 rounded-t-lg border-b-0 gap-1`}>
+        <button
+          type="button"
+          onClick={() => setShowToolbar(prev => !prev)}
+          className={`px-2 py-1 text-xs font-medium rounded border transition-colors flex-shrink-0 ${
+            showToolbar
+              ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100'
+              : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-100'
+          }`}
+          title={showToolbar ? 'Ocultar símbolos' : 'Mostrar símbolos matemáticos'}
+        >
+          𝑓x
+        </button>
+        {showToolbar && (
+          <div className="flex flex-wrap gap-1">
+            {toolbarButtons.map((btn, i) => (
+              <button
+                key={i}
+                type="button"
+                title={btn.title}
+                disabled={disabled}
+                className={`${compact ? 'px-1.5 py-0.5 text-xs min-w-[26px]' : 'px-2 py-1 text-sm min-w-[32px]'} bg-white border border-gray-300 rounded hover:bg-teal-500 hover:text-white hover:border-teal-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-current disabled:hover:border-gray-300`}
+                onClick={() => insertSymbol(btn.latex)}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Contenedor para math-field */}

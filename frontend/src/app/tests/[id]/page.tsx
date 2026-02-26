@@ -805,6 +805,7 @@ export default function TestDetailPage() {
                 question={question}
                 index={index}
                 totalQuestions={questions.length}
+                testId={testId}
                 onChange={(updates) => handleQuestionChange(question.id, updates)}
                 onDelete={() => handleDeleteQuestion(question.id)}
                 onMoveUp={() => handleMoveUp(index)}

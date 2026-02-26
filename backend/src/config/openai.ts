@@ -329,11 +329,12 @@ VALIDACIÓN DE OPCIONES:
 
 PREGUNTAS CON IMÁGENES:
 - Si la transcripción contiene ![](URL) o ![caption](URL) antes o dentro de una pregunta, pon has_image: true, la URL en image_url, y una descripción breve en image_description
-- Si hay MÚLTIPLES imágenes para una pregunta (ej: ![Caja 1](URL1) ![Caja 2](URL2)), usa la primera URL en image_url y pon TODAS las URLs adicionales en el campo "text" como ![caption](URL)
+- Si hay MÚLTIPLES imágenes para una pregunta: usa la primera URL en image_url. Las imágenes adicionales y TODO el texto que hay entre ellas deben ir en "context" manteniendo la sintaxis ![caption](URL). NO pierdas el texto intermedio entre imágenes.
+- Ejemplo con 2 imágenes: image_url="URL1", context="Texto intro...\n\n![](URL1)\n\nTexto entre imágenes...\n\n![tabla](URL2)"
 - Si las opciones son imágenes (ej: ![B)](URL)), mantén la sintaxis ![caption](URL) dentro de las opciones
 - Si la transcripción indica [Imagen: ...], pon has_image: true y la descripción en image_description
 - NO incluyas la PRIMERA ![](URL) dentro de "text" — extráela al campo image_url
-- FIGURAS/CARTELES SIN IMAGEN: Si el texto dice "En la figura", "el cartel", "la imagen adjunta" pero NO hay ![](URL), el OCR probablemente extrajo la figura como texto parcial. En ese caso pon has_image: true y en image_description escribe "[Imagen no extraída por OCR - verificar en PDF original]". Incluye todo el texto extraído del cartel/figura en "context".
+
 
 TEXTO INTRODUCTORIO Y CONTEXTO:
 - Si hay texto introductorio/escenario ANTES de la pregunta real (ej: "Un diario tiene una colilla recortable..."), ponlo en "context"
@@ -466,6 +467,7 @@ async function structureTranscription(
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const responseText = completion.choices[0].message.content || '{}';
+  console.log(`  📝 Phase 2 raw response: ${responseText.length} chars (${elapsed}s)`);
 
   // Fix LaTeX backslashes BEFORE JSON.parse to prevent escape destruction
   const fixedJson = fixLatexInJsonString(responseText);
@@ -473,15 +475,133 @@ async function structureTranscription(
     console.log(`  🔧 Fixed LaTeX escapes in JSON response`);
   }
 
-  const parsed = JSON.parse(fixedJson);
+  let parsed;
+  try {
+    parsed = JSON.parse(fixedJson);
+  } catch (parseErr) {
+    console.error(`  ❌ JSON parse failed: ${(parseErr as Error).message}`);
+    console.error(`  ❌ First 500 chars: ${fixedJson.substring(0, 500)}`);
+    console.error(`  ❌ Last 500 chars: ${fixedJson.substring(fixedJson.length - 500)}`);
+    throw parseErr;
+  }
   const rawQuestions = parsed.questions || [];
 
   console.log(`  📝 Phase 2 done: ${rawQuestions.length} questions structured (${elapsed}s)`);
 
+  // Phase 2.5: Recover images that gpt-4o-mini may have dropped from context
+  recoverMissingImages(rawQuestions, transcription);
+
   // Post-process: convert Unicode math to LaTeX, fix bare commands, repair broken escapes
-  const questions = rawQuestions.map((q: any) => postProcessQuestion(q));
+  const questions = rawQuestions.map((q: any) => {
+    try {
+      return postProcessQuestion(q);
+    } catch (ppErr) {
+      console.error(`  ⚠️ postProcessQuestion failed for Q${q.number}: ${(ppErr as Error).message}`);
+      return q; // Return unprocessed question rather than losing entire chunk
+    }
+  });
 
   return questions;
+}
+
+/**
+ * Phase 2.5: Recover images that gpt-4o-mini dropped from context.
+ * Compares each question against its original text block in the chunk
+ * and reconstructs context if images are missing.
+ */
+function recoverMissingImages(questions: any[], originalChunk: string): void {
+  if (questions.length === 0) return;
+
+  const sorted = [...questions].sort((a, b) => parseInt(a.number) - parseInt(b.number));
+
+  for (let qi = 0; qi < sorted.length; qi++) {
+    const q = sorted[qi];
+    const num = parseInt(q.number, 10);
+    if (isNaN(num)) continue;
+
+    // Use question content to pinpoint exact location (avoids matching instruction numbers like "1. Esta prueba...")
+    const firstContent = (q.context || q.text || '').trim();
+    const contentSnippet = firstContent.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let startPattern: RegExp;
+    if (contentSnippet.length >= 10) {
+      startPattern = new RegExp(`(?:^|\\n)(${num}\\.\\s+)${contentSnippet}`, 'm');
+    } else {
+      startPattern = new RegExp(`(?:^|\\n)(${num}\\.\\s)`, 'm');
+    }
+
+    const startMatch = originalChunk.match(startPattern);
+    if (!startMatch || startMatch.index === undefined) continue;
+
+    const lineStart = startMatch.index + (originalChunk[startMatch.index] === '\n' ? 1 : 0);
+
+    // Find end boundary: next question or end of chunk
+    let blockEnd = originalChunk.length;
+    if (qi + 1 < sorted.length) {
+      const nextNum = parseInt(sorted[qi + 1].number, 10);
+      if (!isNaN(nextNum)) {
+        const afterCurrent = lineStart + startMatch[0].trimStart().length;
+        const nextContent = (sorted[qi + 1].context || sorted[qi + 1].text || '').trim();
+        const nextSnippet = nextContent.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        const endPattern = nextSnippet.length >= 10
+          ? new RegExp(`(?:^|\\n)${nextNum}\\.\\s+${nextSnippet}`, 'm')
+          : new RegExp(`(?:^|\\n)${nextNum}\\.\\s`, 'm');
+
+        const endMatch = originalChunk.slice(afterCurrent).match(endPattern);
+        if (endMatch && endMatch.index !== undefined) {
+          blockEnd = afterCurrent + endMatch.index;
+        }
+      }
+    }
+
+    const block = originalChunk.slice(lineStart, blockEnd).trim();
+
+    // Extract all image URLs from the original block
+    const imgRegex = /!\[[^\]]*\]\((https?:\/\/[^)]+)\)/g;
+    const originalImgUrls: string[] = [];
+    let m;
+    while ((m = imgRegex.exec(block)) !== null) {
+      originalImgUrls.push(m[1]);
+    }
+
+    if (originalImgUrls.length <= 1) continue; // Only fix multi-image questions
+
+    // Check which URLs appear in the question's JSON output
+    const allJson = [q.context || '', q.text || '', q.image_url || '', ...(q.options || [])].join('\n');
+    const missingUrls = originalImgUrls.filter(url => !allJson.includes(url));
+
+    if (missingUrls.length === 0) continue;
+
+    console.log(`  🔧 Q${num}: ${missingUrls.length}/${originalImgUrls.length} image(s) missing — recovering from original text`);
+
+    // Reconstruct context from original block
+    const withoutNum = block.replace(/^\d+\.\s+/, '');
+    const cleaned = withoutNum.replace(/\n*FORMA\s+\d+-\d+\n*/g, '\n').trim();
+
+    // Find where q.text starts in the block
+    const qText = (q.text || '').trim();
+    if (!qText) continue;
+
+    const textSnippet = qText.slice(0, 50).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const textIdx = cleaned.search(new RegExp(textSnippet));
+
+    if (textIdx > 0) {
+      q.context = cleaned.slice(0, textIdx).trim();
+      console.log(`  ✅ Q${num}: context rebuilt — ${q.context.length} chars with ${originalImgUrls.length} image refs`);
+    } else {
+      // Fallback: append missing images to existing context
+      const missingMd = missingUrls.map(u => `![](${u})`).join('\n\n');
+      q.context = q.context ? `${q.context}\n\n${missingMd}` : missingMd;
+      console.log(`  ⚠️ Q${num}: appended ${missingUrls.length} missing image(s) to existing context`);
+    }
+
+    // Ensure image_url is set to first image
+    if (!q.image_url && originalImgUrls.length > 0) {
+      q.image_url = originalImgUrls[0];
+      q.has_image = true;
+    }
+  }
 }
 
 /**
@@ -1188,6 +1308,9 @@ export async function analyzeDocumentMathpix(
   fullText = fullText.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1');
   // Remove page footer markers "- N -" added by include_page_info (buildPageMapFromOcr uses rawText)
   fullText = fullText.replace(/^-\s*\d+\s*-$/gm, '');
+  // Strip \mathrm{X} → X — gpt-4o-mini tries to convert these to \text{X}
+  // and enters an infinite repetition loop when combined with \leq, \cdot, etc.
+  fullText = fullText.replace(/\\mathrm\{([^}]*)\}/g, '$1');
 
   // DEBUG: dump final text before splitting
   try {
@@ -1222,7 +1345,14 @@ export async function analyzeDocumentMathpix(
         console.log(`  ✅ Structure ${i + 1}${attempt > 0 ? ` (retry ${attempt})` : ''}: ${questions.length} preguntas`);
         break;
       } catch (err) {
-        console.warn(`  ⚠️ Structure ${i + 1} attempt ${attempt + 1} failed: ${(err as Error).message}`);
+        const errMsg = (err as Error).message;
+        const stack = (err as Error).stack?.split('\n').slice(0, 3).join('\n');
+        console.warn(`  ⚠️ Structure ${i + 1} attempt ${attempt + 1} failed: ${errMsg}`);
+        console.warn(`     Stack: ${stack}`);
+        console.warn(`     Chunk size: ${chunk.length} chars, ${chunk.split('\n').length} lines`);
+        try {
+          fs.writeFileSync(path.join(debugDir, `chunk-${i+1}-failed-attempt${attempt+1}.txt`), chunk, 'utf-8');
+        } catch {}
         if (attempt === 2) {
           console.error(`  ❌ Structure ${i + 1} failed after 3 attempts — skipping chunk`);
         }

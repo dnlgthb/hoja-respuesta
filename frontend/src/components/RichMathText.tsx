@@ -14,7 +14,38 @@ interface Segment {
 }
 
 // Common LaTeX commands that indicate math content without $ delimiters
-const BARE_LATEX_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|underline|hat|bar|dot|sum|prod|int|lim|log|ln|sin|cos|tan|sec|csc|cot|text|mathrm|mathbf|textbf|left|right|begin|end)\b/;
+const BARE_LATEX_PATTERN = /\\(frac|sqrt|cdot|times|div|pm|mp|neq|geq|leq|sim|approx|infty|pi|alpha|beta|gamma|delta|theta|lambda|sigma|vec|overline|underline|hat|bar|dot|sum|prod|int|lim|log|ln|sin|cos|tan|sec|csc|cot|text|mathrm|mathbf|textbf|left|right)\b/;
+
+// LaTeX table environments that should NOT trigger math wrapping
+const TABULAR_ENV_PATTERN = /\\begin\{(tabular|tabularx|array|longtable|table)\}/;
+
+/**
+ * Convert LaTeX tabular environments to readable plain text.
+ * Strips \begin{tabular}, \end{tabular}, \hline, \multicolumn, etc.
+ * Converts & (column separator) to " | " and \\ (row separator) to newlines.
+ */
+function convertTabularToText(text: string): string {
+  if (!TABULAR_ENV_PATTERN.test(text)) return text;
+
+  return text
+    // Remove \begin{tabular}{...} and \end{tabular} (with any column spec)
+    .replace(/\\begin\{(?:tabular|tabularx|array|longtable|table)\}(?:\{[^}]*\})?/g, '')
+    .replace(/\\end\{(?:tabular|tabularx|array|longtable|table)\}/g, '')
+    // Remove \hline, \cline{...}
+    .replace(/\\hline/g, '')
+    .replace(/\\cline\s*\{[^}]*\}/g, '')
+    // Convert \multicolumn{n}{spec}{text} → text
+    .replace(/\\multicolumn\{[^}]*\}\{[^}]*\}\{([^}]*)\}/g, '$1')
+    // Remove \section*{} and similar structural commands
+    .replace(/\\section\*?\{([^}]*)\}/g, '$1')
+    // Convert \\ (row ends) to newlines
+    .replace(/\\\\/g, '\n')
+    // Convert & (column separators) to " | "
+    .replace(/\s*&\s*/g, ' | ')
+    // Clean up multiple blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 /**
  * Repair LaTeX commands destroyed by JSON.parse escape interpretation.
@@ -70,12 +101,30 @@ function repairBrokenLatex(text: string): string {
 function preprocessLatex(input: string): string {
   if (!input) return input;
 
+  // Step -1: Fix literal \n (two chars) → actual newlines (fixLatexInJsonString bug)
+  input = input.replace(/\\n(?![a-zA-Z])/g, '\n');
+
+  // Step -0.5: Fix \textdollar → $ (Phase 2 sometimes outputs this for dollar signs)
+  input = input.replace(/\\text\{\\textdollar\}/g, '\\$');
+  input = input.replace(/\\textdollar/g, '\\$');
+
   // Step 0: Repair control characters from JSON.parse escape destruction
   input = repairBrokenLatex(input);
 
   // Step 0.5: Fix double-escaped percent signs (\\% → \%)
   // AI sometimes produces \\% in JSON which after parsing becomes \\% instead of \%
   input = input.replace(/\\\\%/g, '\\%');
+
+  // Step 0.7: Convert LaTeX tabular environments to readable text
+  // Must be done before $ detection since tabular uses & which isn't math
+  input = convertTabularToText(input);
+
+  // Step 0.8: Remove \section*{title} → title (structural LaTeX from Mathpix)
+  input = input.replace(/\\(?:sub)*section\*?\{([^}]*)\}/g, '$1');
+
+  // Step 0.9: Fix currency $\n$ NUMBER$ → $NUMBER (Chilean peso pattern)
+  // Phase 2 breaks "$300.000" into "$\n$ 300000$" where \n is a real newline
+  input = input.replace(/\$\s*\n\s*\$\s*(\d[\d.,\s]*)\$/g, (_, num) => '\\$' + num.trim());
 
   // If already has $ delimiters, return as-is
   if (input.includes('$')) return input;
@@ -96,13 +145,45 @@ function preprocessLatex(input: string): string {
 }
 
 /**
+ * Find next unescaped $ (skipping \$ sequences).
+ */
+function findUnescapedDollar(text: string, start: number): number {
+  let i = start;
+  while (i < text.length) {
+    if (text[i] === '\\' && i + 1 < text.length && text[i + 1] === '$') {
+      i += 2; // Skip \$
+      continue;
+    }
+    if (text[i] === '$') return i;
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * Find next unescaped $$ (skipping \$ sequences).
+ */
+function findUnescapedDoubleDollar(text: string, start: number): number {
+  let i = start;
+  while (i < text.length) {
+    if (text[i] === '\\' && i + 1 < text.length && text[i + 1] === '$') {
+      i += 2; // Skip \$
+      continue;
+    }
+    if (text[i] === '$' && i + 1 < text.length && text[i + 1] === '$') return i;
+    i++;
+  }
+  return -1;
+}
+
+/**
  * Parse mixed text+LaTeX into segments.
  */
 function parseMathText(input: string): Segment[] {
   const processed = preprocessLatex(input);
 
   if (!processed || !processed.includes('$')) {
-    return [{ type: 'text', content: input || '' }];
+    return [{ type: 'text', content: processed || '' }];
   }
 
   const segments: Segment[] = [];
@@ -121,7 +202,7 @@ function parseMathText(input: string): Segment[] {
         segments.push({ type: 'text', content: currentText });
         currentText = '';
       }
-      const end = processed.indexOf('$$', i + 2);
+      const end = findUnescapedDoubleDollar(processed, i + 2);
       if (end !== -1) {
         segments.push({ type: 'display-math', content: processed.slice(i + 2, end) });
         i = end + 2;
@@ -137,7 +218,7 @@ function parseMathText(input: string): Segment[] {
         segments.push({ type: 'text', content: currentText });
         currentText = '';
       }
-      const end = processed.indexOf('$', i + 1);
+      const end = findUnescapedDollar(processed, i + 1);
       if (end !== -1) {
         segments.push({ type: 'math', content: processed.slice(i + 1, end) });
         i = end + 1;
@@ -213,27 +294,36 @@ function getMathLive() {
 export default function RichMathText({ text, className }: RichMathTextProps) {
   const segments = useMemo(() => parseMathText(text), [text]);
   const hasMath = useMemo(() => segments.some(s => s.type !== 'text'), [segments]);
+  const hasImages = useMemo(() => /!\[[^\]]*\]\([^)]+\)/.test(text), [text]);
+  const needsHtmlRender = hasMath || hasImages;
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
 
 
   useEffect(() => {
-    if (!hasMath) return;
+    if (!needsHtmlRender) return;
 
     let cancelled = false;
 
-    getMathLive()
-      .then((MathLive) => {
-        if (cancelled) return;
+    const buildHtml = async () => {
+      const MathLive = hasMath ? await getMathLive() : null;
+      if (cancelled) return;
 
-        const html = segments
-          .map((seg) => {
-            if (seg.type === 'text') {
-              const escaped = seg.content
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-              return escaped;
-            }
+      const html = segments
+        .map((seg) => {
+          if (seg.type === 'text') {
+            let escaped = seg.content
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br/>');
+            // Convert markdown images ![alt](url) to <img> tags
+            escaped = escaped.replace(
+              /!\[([^\]]*)\]\(([^)]+)\)/g,
+              '<img src="$2" alt="$1" style="max-width:100%;margin:0.5em 0;display:block;border-radius:4px;" />'
+            );
+            return escaped;
+          }
+          if (MathLive) {
             try {
               const markup = MathLive.convertLatexToMarkup(seg.content);
               if (seg.type === 'display-math') {
@@ -244,22 +334,25 @@ export default function RichMathText({ text, className }: RichMathTextProps) {
               console.error(`[RichMathText] Failed to render: "${seg.content}"`, err);
               return seg.content;
             }
-          })
-          .join('');
+          }
+          return seg.content;
+        })
+        .join('');
 
-        if (!cancelled) {
-          setRenderedHtml(html);
-        }
-      })
-      .catch((err) => {
-        console.error('[RichMathText] MathLive load/render error:', err);
-      });
+      if (!cancelled) {
+        setRenderedHtml(html);
+      }
+    };
+
+    buildHtml().catch((err) => {
+      console.error('[RichMathText] MathLive load/render error:', err);
+    });
 
     return () => { cancelled = true; };
-  }, [segments, hasMath]);
+  }, [segments, needsHtmlRender, hasMath]);
 
-  // No math detected → plain text (use processed segments to handle \$ → $ conversion)
-  if (!hasMath) {
+  // No rich content → plain text (use processed segments to handle \$ → $ conversion)
+  if (!needsHtmlRender) {
     const plainText = segments.map(s => s.content).join('');
     return <span className={className}>{plainText}</span>;
   }

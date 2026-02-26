@@ -1291,25 +1291,26 @@ export class TestsService {
       },
     });
 
-    // Duplicar las preguntas
+    // Duplicar las preguntas en batch (single query, much faster than sequential creates)
     if (originalTest.questions.length > 0) {
-      for (const question of originalTest.questions) {
-        await prisma.question.create({
-          data: {
-            test_id: duplicatedTest.id,
-            question_number: question.question_number,
-            type: question.type,
-            question_text: question.question_text,
-            points: question.points,
-            options: question.options ?? undefined,
-            correct_answer: question.correct_answer,
-            correction_criteria: question.correction_criteria,
-          },
-        });
-      }
+      await prisma.question.createMany({
+        data: originalTest.questions.map(question => ({
+          test_id: duplicatedTest.id,
+          question_number: question.question_number,
+          type: question.type,
+          question_text: question.question_text,
+          points: question.points,
+          options: question.options ?? undefined,
+          correct_answer: question.correct_answer,
+          correction_criteria: question.correction_criteria,
+          context: question.context,
+          image_url: question.image_url,
+          question_label: question.question_label,
+        })),
+      });
     }
 
-    // Recargar para incluir las preguntas duplicadas
+    // Reload to include duplicated questions
     const finalTest = await prisma.test.findUnique({
       where: { id: duplicatedTest.id },
       include: {

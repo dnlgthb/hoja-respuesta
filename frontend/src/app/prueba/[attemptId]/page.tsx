@@ -862,7 +862,7 @@ function TrueFalseInput({ value, onChange, disabled, justification, onJustificat
           disabled={disabled}
           className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
             value === 'V'
-              ? 'border-green-500 bg-green-50 text-green-700'
+              ? 'border-blue-500 bg-blue-50 text-blue-700'
               : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
           } ${disabled ? 'cursor-not-allowed' : ''}`}
         >
@@ -874,7 +874,7 @@ function TrueFalseInput({ value, onChange, disabled, justification, onJustificat
           disabled={disabled}
           className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
             value === 'F'
-              ? 'border-red-500 bg-red-50 text-red-700'
+              ? 'border-blue-500 bg-blue-50 text-blue-700'
               : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
           } ${disabled ? 'cursor-not-allowed' : ''}`}
         >

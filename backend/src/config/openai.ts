@@ -1784,9 +1784,13 @@ export async function correctWithAI(params: {
   // Para MATH: solo comparar resultado, NO pedir procedimiento
   const typeDescription = questionType === 'MATH'
     ? 'Esta es una pregunta de MATEMÁTICAS. Solo compara el RESULTADO FINAL con la pauta. NO evalúes procedimiento.'
-    : 'Esta es una pregunta de DESARROLLO. Evalúa la comprensión conceptual, claridad de expresión y uso correcto de términos.';
+    : 'Esta es una pregunta de DESARROLLO.';
 
-  const mathInstructions = questionType === 'MATH'
+  const questionSection = questionText
+    ? `PREGUNTA:\n${questionText}\n`
+    : '';
+
+  const typeInstructions = questionType === 'MATH'
     ? `
 REGLAS PARA MATEMÁTICAS:
 - SOLO compara el resultado numérico/expresión del estudiante con la pauta
@@ -1794,23 +1798,29 @@ REGLAS PARA MATEMÁTICAS:
 - Si no coincide: 0 puntos
 - NUNCA pidas "desarrollo", "procedimiento" o "demostración"
 - El feedback solo dice si es correcto o incorrecto`
-    : '';
+    : `
+REGLAS PARA DESARROLLO:
+- Compara la respuesta del estudiante con la PAUTA DE CORRECCIÓN
+- Si el estudiante dice lo MISMO que la pauta (aunque con otras palabras, sinónimos, o distinto orden): puntaje COMPLETO
+- Si la respuesta cubre parcialmente la pauta: puntaje parcial proporcional
+- Si la respuesta no tiene relación con la pauta: 0 puntos
+- SÉ FLEXIBLE: no exijas las mismas palabras exactas de la pauta
+- NO agregues requisitos que no están en la pauta
+- NO pidas más detalle o profundidad del que tiene la pauta
+- La pauta es el ÚNICO criterio — si la pauta es breve, acepta respuestas breves`;
 
   const prompt = `Eres un profesor evaluando la respuesta de un estudiante.
 
 ${typeDescription}
 
-PREGUNTA:
-${questionText}
-
-PAUTA DE CORRECCIÓN (respuesta esperada):
+${questionSection}PAUTA DE CORRECCIÓN (respuesta esperada):
 ${correctionCriteria || 'No se proporcionó pauta específica.'}
 
 PUNTAJE MÁXIMO: ${maxPoints} puntos
 
 RESPUESTA DEL ESTUDIANTE:
 ${studentAnswer}
-${mathInstructions}
+${typeInstructions}
 
 Responde SOLO con JSON:
 {
@@ -2172,10 +2182,13 @@ REGLAS POR TIPO DE PREGUNTA:
 
 3. DEVELOPMENT:
    - "correct_answer" = null (no se usa para desarrollo)
-   - "correction_criteria" = COPIAR TEXTUALMENTE la respuesta/pauta que da el documento. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos. Este texto será usado después por otra IA para corregir.
+   - "correction_criteria" = COPIAR TEXTUALMENTE la respuesta/pauta COMPLETA que da el documento. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos. Este texto será usado después por otra IA para corregir.
+   - COPIAR TODO el texto de la respuesta, incluyendo TODOS los párrafos, oraciones y puntos. NO detenerse en el primer punto aparte — seguir copiando hasta que empiece la siguiente pregunta.
+   - Si la respuesta tiene múltiples párrafos, oraciones separadas por punto, o viñetas → copiar TODO junto, separado por espacios o saltos de línea.
    - EJEMPLO CORRECTO: Si la pauta dice "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
      → correct_answer: null, correction_criteria: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
    - EJEMPLO INCORRECTO: correction_criteria: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios genéricos.
+   - EJEMPLO INCORRECTO: Copiar solo la primera oración y omitir el resto ← ESTO ESTÁ MAL, copia TODO.
 
 4. MATH:
    - "correct_answer" = null (no se usa para matemáticas)

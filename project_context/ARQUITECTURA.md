@@ -136,9 +136,17 @@ hoja-respuesta/
 | POST | `/:id/analyze-pdf` | Analizar PDF con IA → crear preguntas |
 | POST | `/:id/analyze-rubric` | Subir pauta PDF → IA mapea respuestas a preguntas |
 | POST | `/:id/activate` | Generar código 6 chars, status → ACTIVE |
+| POST | `/:id/close` | Cerrar prueba activa |
+| POST | `/:id/duplicate` | Duplicar prueba con preguntas (batch insert) |
 | PUT | `/:id/questions/batch` | Actualizar múltiples preguntas (batch) |
 | PUT | `/:id/questions/:questionId` | Actualizar pregunta |
 | DELETE | `/:id/questions/:questionId` | Eliminar pregunta |
+| PUT | `/:id/passing-threshold` | Actualizar exigencia (% mínimo nota 4.0) |
+| POST | `/:id/send-results` | Enviar resultados por email |
+| GET | `/:id/export` | Exportar resultados a Excel |
+| GET | `/:id/results` | Dashboard de resultados |
+| PUT | `/:id/answers/:answerId` | Editar puntaje/feedback manual |
+| POST | `/:id/attempts/:attemptId/mark-reviewed` | Marcar intento como revisado |
 | GET | `/:id/attempts` | **Monitoreo:** Lista estudiantes con estado |
 | POST | `/:id/attempts/:attemptId/unlock` | **Monitoreo:** Desbloquear estudiante |
 
@@ -174,7 +182,7 @@ hoja-respuesta/
 | **Neon** | PostgreSQL | `DATABASE_URL` |
 | **Supabase Storage** | PDFs + imágenes de preguntas (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
 | **Mathpix** | OCR especializado en matemáticas (Phase 1: PDF → .mmd con LaTeX perfecto) | `MATHPIX_APP_ID`, `MATHPIX_APP_KEY` |
-| **OpenAI** | Phase 2: structuring OCR → JSON, análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
+| **OpenAI** | Identificación de preguntas (tipo/número/sección), análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
 | **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
 | **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
 | **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
@@ -205,17 +213,17 @@ hoja-respuesta/
            └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-### Flujo: Crear prueba con IA
+### Flujo: Crear prueba con IA (Modelo "Hoja de Respuesta")
 
 1. Profesor sube PDF → `POST /api/tests/:id/upload-pdf`
 2. PDF se guarda en Supabase Storage → retorna URL
 3. Profesor pide análisis → `POST /api/tests/:id/analyze-pdf`
-4. **Phase 1 (OCR):** PDF se envía a Mathpix API → retorna .mmd con LaTeX perfecto + imágenes como `![](cdn.mathpix.com/...)`
-5. **Phase 1.5 (Imágenes):** `extractAndRehostImages()` descarga imágenes del CDN de Mathpix → sube a Supabase Storage (permanente) → reemplaza URLs en el texto
-6. **Phase 2 (Estructura):** Texto .mmd se divide en chunks → gpt-4o-mini estructura en JSON con campos: text, type, options, image_url, etc.
-7. Backend crea registros Question en PostgreSQL (con campos: context, has_image, image_description, image_page, **image_url**)
-8. Frontend muestra editor de preguntas con renderizado LaTeX (RichMathText) + imágenes inline
-9. **Fallback:** Si Mathpix no está configurado, usa GPT-4o Vision (PDF directo como base64, sin imágenes extraídas)
+4. **Phase 1 (OCR):** PDF completo se envía a Mathpix API → retorna .mmd con texto OCR
+5. **Phase 2 (Identificación):** Texto limpio → **UNA sola llamada** a gpt-4o-mini que identifica número, tipo y sección de cada pregunta (NO extrae texto, opciones ni imágenes)
+6. Backend crea registros Question con `question_text = ''`, opciones solo letras `["A","B","C","D"]`, secciones en `context`
+7. Frontend muestra PDF al lado izquierdo + hoja de respuesta compacta al derecho (botones bubble-sheet para MC, V/F, textarea para desarrollo/math)
+8. **Fallback:** Si Mathpix no está configurado, usa GPT-4o Vision (pipeline legacy con extracción completa)
+9. **Backward compat:** Tests antiguos con `question_text` poblado siguen mostrando texto completo
 
 ### Flujo: Cargar pauta de corrección con IA
 

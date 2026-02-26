@@ -2,6 +2,8 @@
 
 ## Estado actual (Feb 2026)
 
+> **Nota:** Con el modelo "Hoja de Respuesta" (Feb 2026), las preguntas nuevas tienen `question_text = ''` y no usan el pipeline de extracción completa. La mayoría de los problemas documentados abajo aplican solo a tests legacy con texto extraído. El editor TipTap, RichMathText, y MathField siguen activos para backward compat y edición manual.
+
 ### Stack de renderizado matemático
 - **Librería**: MathLive v0.108.2 (mathlive)
 - **Componente de renderizado**: `RichMathText.tsx` — parsea texto mixto con `$...$` y convierte a HTML con `convertLatexToMarkup()`

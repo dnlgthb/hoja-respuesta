@@ -212,12 +212,27 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
   - Serialización bidireccional texto plano ↔ TipTap HTML (sin cambios de BD)
   - Prevención de cambios fantasma: normalización round-trip (imágenes + $ escaping)
   - Probado con PAES 65 preguntas: math + imágenes + contexto, zero phantom changes
+- [x] **Modelo "Hoja de Respuesta"** — Simplificación completa del pipeline:
+  - Nuevo pipeline: Mathpix OCR + UNA sola llamada gpt-4o-mini (identifica tipo/número/sección)
+  - NO extrae texto, opciones, contexto, imágenes, LaTeX
+  - PDF se muestra al lado izquierdo, hoja de respuesta compacta al derecho
+  - Secciones con números romanos detectadas como divisores entre preguntas
+  - MC en modo bubble-sheet: botones compactos A/B/C/D en fila horizontal
+  - V/F con colores neutros (azul) en vez de verde/rojo
+  - TipTap editor oculto cuando no hay texto (modo hoja de respuesta)
+  - Backward compat: tests antiguos con texto siguen mostrándose completos
+  - Tiempo extracción: ~20-30s (vs ~2 min pipeline anterior)
+  - Pipeline anterior (`analyzeDocumentMathpix`) marcado `@deprecated`
+- [x] Fix duplicación de pruebas: `createMany` batch insert (4s vs 40s+ timeout)
+- [x] Corrección DEVELOPMENT más flexible: reglas explícitas, omite PREGUNTA vacía
+- [x] Prompt de pauta mejorado: copia multi-párrafo completa (no se corta en punto aparte)
+- [x] Extracción de estudiantes mejorada: rechaza metadata de planillas (Asignatura, Promedio, etc.)
 
 ---
 
 ## Pendientes Menores / Deuda Técnica
 
-- [ ] **QuickLaTeX tabla `+` bug**: `renderLatexTableToImage()` envía LaTeX via `URLSearchParams` que codifica espacios como `+`. QuickLaTeX los muestra literal (`+Hecho+histórico+`). Fix con `encodeURIComponent` no funcionó. Investigar alternativas (POST raw body, otra API de renderizado LaTeX).
 - [ ] Página de resultados para estudiantes (acceso por link único)
 - [ ] Generación de PDF con resultados
+- [ ] Limpiar código legacy del pipeline de extracción completa (`analyzeDocumentMathpix` y fases asociadas)
 - [ ] Pruebas creadas antes del fix de alternativas necesitan corrección manual

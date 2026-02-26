@@ -172,15 +172,24 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
   - Probado: prompt changes, voting (2-3 OCR calls), temperature=0 — nada funcionó
 - Sigue como fallback si Mathpix no está configurado
 
-### Fase C: Mathpix + gpt-4o-mini (actual, elegida)
-- **Phase 1 (Mathpix OCR):** PDF completo → API Mathpix → .mmd con LaTeX perfecto + imágenes recortadas con coordenadas pixel-perfect
-- **Phase 1.25 (Normalización figuras):** `\begin{figure}` blocks + standalone `\includegraphics` → `![caption](URL)` markdown unificado
-- **Phase 1.3 (Merge composites):** Heurística Y-overlap agrupa crops que se superponen verticalmente en la misma página → single bounding-box image. Usa Union-Find. Padding=120px. Reemplazó GPT-4o Vision (que era demasiado conservador e inconsistente).
-- **Phase 1.5 (Re-hosting imágenes):** Descarga `![](cdn.mathpix.com/...)` → sube a Supabase Storage → URLs permanentes (CDN Mathpix expira en ~30 días)
-- **Phase 1.6 (Tablas → imágenes):** `\begin{tabular}` → PNG via QuickLaTeX → Supabase. ⚠️ Bug conocido: `URLSearchParams` codifica espacios como `+` que QuickLaTeX muestra literal. Fix con `encodeURIComponent` no funcionó, pendiente.
-- **Phase 2 (gpt-4o-mini):** .mmd con URLs permanentes → JSON estructurado con image_url por pregunta
-- Costo: $0.005/pág OCR + ~$0.01 structuring = ~$0.30 por PAES 56 páginas
-- Tiempo: ~2 min (vs ~10 min con GPT-4o Vision)
+### Fase C: Mathpix + gpt-4o-mini extracción completa (@deprecated, legacy)
+- Pipeline completo con fases 1 → 1.25 → 1.3 → 1.5 → 1.6 → 2 → 3 → 3.5
+- Extraía texto, opciones, imágenes, contexto de cada pregunta
+- Problema: no-determinista (56-66 preguntas), lento (~2+ min), cada fix agregaba complejidad
+- Función `analyzeDocumentMathpix()` marcada como `@deprecated` pero no eliminada
+
+### Fase D: Modelo "Hoja de Respuesta" (actual, elegida)
+- **Cambio de filosofía:** El PDF ES la prueba. La plataforma solo genera una hoja de respuesta.
+- **Phase 1 (Mathpix OCR):** PDF completo → API Mathpix → .mmd con texto OCR
+- **Phase 2 (Identificación):** Limpieza mínima del texto → **UNA sola llamada** a gpt-4o-mini
+- Output: solo `{ number, type, options_count, section }` por pregunta
+- NO extrae texto, opciones, contexto, imágenes, LaTeX
+- Secciones con números romanos (I, II, III) detectadas y almacenadas en `context`
+- `question_text = ''`, opciones = solo letras `["A","B","C","D"]`
+- Función: `extractQuestionListMathpix()`
+- Costo: $0.005/pág OCR + ~$0.001 identificación = ~$0.29 por PAES 56 páginas
+- Tiempo: ~20-30s total (vs ~2 min pipeline completo)
+- **Determinista:** Siempre detecta el mismo número de preguntas
 
 **Alternativas descartadas para imágenes:**
 
@@ -191,9 +200,9 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 | Mantener URLs de Mathpix CDN | Expiran en ~30 días |
 | Supabase subfolder `images/` | RLS policy bloqueó uploads; usar path plano `img_{testId}_{hash}` |
 
-**Campos en Question:** `context`, `has_image`, `image_description`, `image_page`, **`image_url`** (URL Supabase permanente)
+**Campos en Question:** `context` (sección o null), `has_image`, `image_description`, `image_page`, **`image_url`** (URL Supabase permanente — solo en tests legacy)
 
-**Aplica a:** Análisis de pruebas (`analyzeDocumentMathpix`). Pautas siguen usando GPT-4o-mini Vision directo.
+**Pipeline actual:** `extractQuestionListMathpix` para pruebas (hoja de respuesta). Pautas siguen usando GPT-4o Vision directo (`analyzeRubricChunk`).
 
 ---
 
@@ -269,6 +278,33 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 | MATH | `correction_criteria` | Resultado numérico/expresión (comparado por IA) | `correct_answer` = no se usa |
 
 **Nota:** La corrección automática (V/F y alternativas) tiene normalización que acepta múltiples formatos ("v", "verdadero", "V", etc.), pero el **QuestionEditor** usa las palabras completas `"Verdadero"`/`"Falso"` como valores de radio buttons. Siempre guardar en ese formato para consistencia visual.
+
+---
+
+## Corrección con IA (DEVELOPMENT/MATH)
+
+**Decisión:** Corrección flexible basada en pauta del profesor
+
+**Reglas DEVELOPMENT:**
+- Si el estudiante dice lo MISMO que la pauta (otras palabras, sinónimos, distinto orden) → puntaje COMPLETO
+- NO exigir las mismas palabras exactas de la pauta
+- NO agregar requisitos que no están en la pauta
+- La pauta es el ÚNICO criterio — si es breve, aceptar respuestas breves
+- Si `question_text` está vacío (modo hoja de respuesta) → se omite la sección PREGUNTA del prompt
+
+**Reglas MATH:**
+- SOLO comparar resultado numérico/expresión
+- NUNCA pedir "desarrollo", "procedimiento" o "demostración"
+
+---
+
+## Duplicación de Pruebas
+
+**Decisión:** `createMany` batch insert en vez de creates secuenciales
+
+**Problema:** Con Neon (serverless PostgreSQL), cada `prisma.question.create()` requiere un roundtrip de red (~2-3s). Con 17+ preguntas, el endpoint excedía timeouts (40-50s).
+
+**Solución:** `prisma.question.createMany()` hace un solo INSERT batch (~4s total independiente del número de preguntas). También copia campos adicionales: `context`, `image_url`, `question_label`.
 
 ---
 

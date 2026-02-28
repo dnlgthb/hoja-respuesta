@@ -71,7 +71,7 @@ async function main() {
   const teacher = await prisma.teacher.create({
     data: {
       email,
-      password: hashedPassword,
+      password_hash: hashedPassword,
       name,
       is_beta: true,
       is_verified: true,

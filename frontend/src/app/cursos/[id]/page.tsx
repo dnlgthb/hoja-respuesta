@@ -374,7 +374,7 @@ export default function CursoDetallePage() {
                   <button
                     onClick={handleUpload}
                     disabled={isUploading}
-                    className="btn-primary px-6 py-2 flex items-center gap-2 mx-auto"
+                    className="px-6 py-2 flex items-center gap-2 mx-auto rounded-md font-medium text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
                   >
                     {isUploading ? (
                       <>

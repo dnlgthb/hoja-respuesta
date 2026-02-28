@@ -428,7 +428,7 @@ export default function ResultsPage() {
                     min="50"
                     max="70"
                     step="1"
-                    value={passingThreshold}
+                    value={Math.min(70, Math.max(50, passingThreshold))}
                     onChange={(e) => setPassingThreshold(Number(e.target.value))}
                     onMouseUp={() => savePassingThreshold(passingThreshold)}
                     onTouchEnd={() => savePassingThreshold(passingThreshold)}
@@ -439,6 +439,35 @@ export default function ResultsPage() {
                     <RefreshCw className="w-4 h-4 animate-spin text-gray-400" />
                   )}
                 </div>
+                {/* Custom value toggle */}
+                {passingThreshold >= 50 && passingThreshold <= 70 ? (
+                  <button
+                    onClick={() => {
+                      const val = prompt('Ingresa el porcentaje de exigencia (0-100):');
+                      if (val !== null) {
+                        const num = Math.min(100, Math.max(0, Math.round(Number(val))));
+                        if (!isNaN(num)) {
+                          setPassingThreshold(num);
+                          savePassingThreshold(num);
+                        }
+                      }
+                    }}
+                    className="text-xs text-gray-400 hover:text-[#14B8A6] transition-colors"
+                    title="Usar un valor personalizado fuera del rango 50-70%"
+                  >
+                    Otro valor
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setPassingThreshold(60);
+                      savePassingThreshold(60);
+                    }}
+                    className="text-xs text-[#14B8A6] hover:text-[#0d9488] font-medium transition-colors"
+                  >
+                    Volver al rango normal
+                  </button>
+                )}
               </div>
               <div className="text-sm text-gray-500">
                 Nota 4.0 = {passingThreshold}% de logro | Notas se recalculan automáticamente

@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { coursesAPI } from '@/lib/api';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, Building2 } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
 const courseSchema = z.object({
@@ -19,7 +19,17 @@ const courseSchema = z.object({
 type CourseFormData = z.infer<typeof courseSchema>;
 
 export default function NuevoCursoPage() {
+  return (
+    <Suspense>
+      <NuevoCursoContent />
+    </Suspense>
+  );
+}
+
+function NuevoCursoContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isInstitutional = searchParams.get('institutional') === 'true';
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +52,10 @@ export default function NuevoCursoPage() {
       setIsLoading(true);
       setError(null);
 
-      const course = await coursesAPI.create(data);
+      const course = await coursesAPI.create({
+        ...data,
+        ...(isInstitutional ? { institutional: true } : {}),
+      });
       router.push(ROUTES.COURSE_DETAIL(course.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear el curso');
@@ -67,7 +80,19 @@ export default function NuevoCursoPage() {
           </button>
 
           {/* Header */}
-          <h2 className="text-2xl font-bold text-gray-900 mb-8">Crear Nuevo Curso</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            {isInstitutional ? 'Crear Curso Institucional' : 'Crear Nuevo Curso'}
+          </h2>
+
+          {/* Institutional Banner */}
+          {isInstitutional && (
+            <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-md flex items-start gap-3">
+              <Building2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-indigo-800">
+                Este curso será visible para todos los profesores de tu institución. Solo tú podrás editarlo y gestionar sus estudiantes.
+              </p>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -116,7 +141,11 @@ export default function NuevoCursoPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full btn-primary py-3 flex items-center justify-center gap-2"
+                className={`w-full py-3 flex items-center justify-center gap-2 rounded-md font-medium text-white transition-colors ${
+                  isInstitutional
+                    ? 'bg-indigo-600 hover:bg-indigo-700'
+                    : 'btn-primary'
+                }`}
               >
                 {isLoading ? (
                   <>
@@ -125,8 +154,8 @@ export default function NuevoCursoPage() {
                   </>
                 ) : (
                   <>
-                    <Save className="w-5 h-5" />
-                    Crear Curso
+                    {isInstitutional ? <Building2 className="w-5 h-5" /> : <Save className="w-5 h-5" />}
+                    {isInstitutional ? 'Crear Curso Institucional' : 'Crear Curso'}
                   </>
                 )}
               </button>

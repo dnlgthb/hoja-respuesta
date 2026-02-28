@@ -10,7 +10,7 @@ export class CoursesController {
    */
   async createCourse(req: Request, res: Response): Promise<void> {
     try {
-      const { name, year } = req.body;
+      const { name, year, institutional } = req.body;
       const teacherId = req.teacherId!;
 
       // Validaciones
@@ -24,10 +24,21 @@ export class CoursesController {
         return;
       }
 
+      let institutionId: string | undefined;
+      if (institutional) {
+        const adminInfo = await coursesService.isInstitutionAdmin(teacherId);
+        if (!adminInfo.isAdmin || !adminInfo.institutionId) {
+          res.status(403).json({ error: 'No tienes permisos para crear cursos institucionales' });
+          return;
+        }
+        institutionId = adminInfo.institutionId;
+      }
+
       const course = await coursesService.createCourse({
         name: name.trim(),
         year: Number(year),
         teacherId,
+        institutionId,
       });
 
       res.status(201).json(course);

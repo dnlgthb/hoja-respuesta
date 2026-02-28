@@ -86,6 +86,8 @@ export interface AuthResponse {
     email: string;
     name: string;
     is_verified: boolean;
+    is_institution_admin: boolean;
+    institution_id: string | null;
   };
 }
 
@@ -137,6 +139,8 @@ export class AuthService {
         email: teacher.email,
         name: teacher.name,
         is_verified: teacher.is_verified,
+        is_institution_admin: teacher.is_institution_admin,
+        institution_id: teacher.institution_id,
       },
     };
   }
@@ -181,6 +185,8 @@ export class AuthService {
         email: teacher.email,
         name: teacher.name,
         is_verified: teacher.is_verified,
+        is_institution_admin: teacher.is_institution_admin,
+        institution_id: teacher.institution_id,
       },
     };
   }
@@ -196,6 +202,8 @@ export class AuthService {
         email: true,
         name: true,
         is_verified: true,
+        is_institution_admin: true,
+        institution_id: true,
         created_at: true,
       },
     });

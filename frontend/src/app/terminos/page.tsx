@@ -15,107 +15,46 @@ export default function TerminosPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Términos de Servicio</h1>
         <p className="text-sm text-gray-500 mb-8">Última actualización: 28 de febrero de 2026</p>
 
-        <div className="bg-white rounded-lg shadow-sm p-8 space-y-6 text-gray-700 text-sm leading-relaxed">
+        <div className="bg-white rounded-lg shadow-sm p-8 space-y-5 text-gray-700 text-[13px] leading-[1.7]">
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">1. Descripción del servicio</h2>
-            <p>
-              Aproba es una plataforma de evaluaciones digitales que permite a docentes digitalizar pruebas existentes
-              (en formato PDF) y generar hojas de respuesta digitales para sus estudiantes. La plataforma incluye
-              corrección asistida por inteligencia artificial como herramienta de apoyo al proceso evaluativo.
-            </p>
-          </section>
+          <p>
+            Aproba es una plataforma de evaluaciones digitales que permite a docentes digitalizar pruebas existentes en formato PDF y generar hojas de respuesta digitales para sus estudiantes, incluyendo funcionalidades de corrección asistida por inteligencia artificial como herramienta de apoyo al proceso evaluativo. Al crear una cuenta o utilizar Aproba de cualquier forma, el usuario declara haber leído, comprendido y aceptado la totalidad de los presentes términos de servicio. En caso de no estar de acuerdo con alguna de las disposiciones aquí contenidas, el usuario deberá abstenerse de utilizar la plataforma.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">2. Aceptación de los términos</h2>
-            <p>
-              Al crear una cuenta o utilizar Aproba, el usuario acepta estos términos de servicio en su totalidad.
-              Si no está de acuerdo con alguno de estos términos, no debe utilizar la plataforma.
-            </p>
-          </section>
+          <p>
+            El usuario es responsable de mantener la confidencialidad de sus credenciales de acceso en todo momento. Cada cuenta creada en la plataforma es personal e intransferible, y el usuario se compromete a proporcionar información veraz y actualizada al momento de registrarse. Aproba se reserva el derecho de suspender o eliminar, sin previo aviso, aquellas cuentas que infrinjan estos términos o que sean utilizadas de manera contraria a los fines para los cuales fue diseñada la plataforma.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">3. Cuentas de usuario</h2>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>El usuario es responsable de mantener la confidencialidad de sus credenciales de acceso.</li>
-              <li>Cada cuenta es personal e intransferible.</li>
-              <li>El usuario debe proporcionar información veraz al registrarse.</li>
-              <li>Aproba se reserva el derecho de suspender o eliminar cuentas que infrinjan estos términos.</li>
-            </ul>
-          </section>
+          <p>
+            El usuario se compromete a utilizar la plataforma exclusivamente con fines educativos legítimos, absteniéndose de subir contenido ilegal, ofensivo o que infrinja derechos de propiedad intelectual de terceros. Queda expresamente prohibido compartir credenciales de acceso con terceros, así como intentar acceder a datos de otros usuarios o vulnerar de cualquier forma los mecanismos de seguridad de la plataforma. El incumplimiento de estas obligaciones podrá derivar en la terminación inmediata de la cuenta del usuario infractor.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">4. Uso aceptable</h2>
-            <p className="mb-2">El usuario se compromete a:</p>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Utilizar la plataforma exclusivamente con fines educativos legítimos.</li>
-              <li>No subir contenido ilegal, ofensivo o que infrinja derechos de terceros.</li>
-              <li>No compartir sus credenciales de acceso con terceros.</li>
-              <li>No intentar acceder a datos de otros usuarios o vulnerar la seguridad de la plataforma.</li>
-            </ul>
-          </section>
+          <p>
+            Los archivos, pruebas, materiales educativos y demás contenidos que el usuario suba a Aproba seguirán siendo de su exclusiva propiedad. Aproba no reclama ni adquiere derechos de propiedad sobre el contenido generado o subido por los usuarios. No obstante, al utilizar el servicio, el usuario otorga a Aproba una licencia limitada, no exclusiva y revocable para procesar dicho contenido con el único fin de proveer las funcionalidades de la plataforma, tales como la extracción de preguntas, la corrección automatizada y el almacenamiento necesario para la operación del servicio. La propiedad intelectual sobre la plataforma Aproba, incluyendo su código fuente, diseño, marca y demás elementos, pertenece íntegramente a sus desarrolladores.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">5. Propiedad del contenido</h2>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Los archivos, pruebas y materiales que el usuario sube a Aproba siguen siendo de su propiedad.</li>
-              <li>Aproba no reclama derechos de propiedad sobre el contenido del usuario.</li>
-              <li>El usuario otorga a Aproba una licencia limitada para procesar su contenido con el único fin de proveer el servicio (extracción de preguntas, corrección, almacenamiento).</li>
-              <li>La propiedad intelectual de la plataforma Aproba (código, diseño, marca) pertenece a sus desarrolladores.</li>
-            </ul>
-          </section>
+          <p>
+            La corrección automática proporcionada por la plataforma constituye una herramienta de apoyo al proceso evaluativo y puede contener errores o imprecisiones. Los resultados generados por inteligencia artificial no constituyen una evaluación definitiva ni vinculante. Es responsabilidad exclusiva del docente revisar, validar y, en su caso, ajustar los resultados generados antes de comunicarlos a sus estudiantes o utilizarlos con cualquier finalidad académica. Aproba no garantiza la exactitud, completitud ni idoneidad de las correcciones generadas por sus sistemas de inteligencia artificial.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">6. Corrección asistida por IA</h2>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>La corrección automática es una <strong>herramienta de apoyo</strong> y puede contener errores.</li>
-              <li>Los resultados generados por IA no constituyen una evaluación definitiva.</li>
-              <li>El docente es responsable de revisar y validar los resultados antes de comunicarlos a sus estudiantes.</li>
-              <li>Aproba no garantiza la exactitud de las correcciones generadas por inteligencia artificial.</li>
-            </ul>
-          </section>
+          <p>
+            Aproba se proporciona en su estado actual, sin garantías de ningún tipo, ya sean expresas o implícitas. Si bien se realizan esfuerzos razonables por mantener la plataforma disponible de forma continua, no se garantiza un funcionamiento ininterrumpido ni libre de errores. Podrán existir períodos de mantenimiento programado o interrupciones imprevistas derivadas de factores técnicos o de fuerza mayor. Aproba no será responsable por daños directos, indirectos, incidentales, especiales o consecuentes que pudieran derivarse del uso o la imposibilidad de uso de la plataforma, incluyendo sin limitación la pérdida de datos, errores en correcciones automatizadas o interrupciones del servicio.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">7. Disponibilidad del servicio</h2>
-            <p>
-              Aproba se proporciona &quot;tal cual&quot; (as is). Si bien nos esforzamos por mantener la plataforma
-              disponible de forma continua, no garantizamos un funcionamiento ininterrumpido. Podrán existir
-              períodos de mantenimiento o interrupciones imprevistas.
-            </p>
-          </section>
+          <p>
+            Aproba se reserva el derecho de modificar estos términos de servicio en cualquier momento y sin necesidad de consentimiento previo. Los cambios serán publicados en esta página con la correspondiente fecha de actualización y, cuando se considere oportuno, serán notificados a los usuarios a través de la plataforma. El uso continuado del servicio con posterioridad a cualquier modificación implica la aceptación plena e incondicional de los nuevos términos.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">8. Limitación de responsabilidad</h2>
-            <p>
-              Aproba no será responsable por daños directos, indirectos, incidentales o consecuentes derivados
-              del uso de la plataforma, incluyendo pero no limitado a: pérdida de datos, errores en correcciones
-              automatizadas, o interrupciones del servicio.
-            </p>
-          </section>
+          <p>
+            Los presentes términos se rigen e interpretan de conformidad con las leyes vigentes de la República de Chile. Cualquier controversia que pudiera surgir en relación con el uso de la plataforma o la interpretación de estos términos será sometida a la jurisdicción de los tribunales ordinarios competentes de la ciudad de Santiago de Chile.
+          </p>
 
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">9. Modificaciones</h2>
-            <p>
-              Aproba podrá modificar estos términos en cualquier momento. Los cambios serán notificados
-              a los usuarios a través de la plataforma. El uso continuado del servicio después de una
-              modificación implica la aceptación de los nuevos términos.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">10. Legislación aplicable</h2>
-            <p>
-              Estos términos se rigen por las leyes de la República de Chile. Cualquier controversia
-              será sometida a los tribunales competentes de la ciudad de Santiago.
-            </p>
-          </section>
-
-          <section className="pt-4 border-t border-gray-200">
+          <div className="pt-4 border-t border-gray-200">
             <p className="text-gray-500">
               Si tienes preguntas sobre estos términos, contáctanos en{' '}
               <a href="mailto:contacto@aproba.ai" className="text-[#14B8A6] hover:underline">contacto@aproba.ai</a>.
             </p>
-          </section>
+          </div>
         </div>
       </div>
     </div>

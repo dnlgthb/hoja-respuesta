@@ -10,6 +10,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { testsAPI, coursesAPI } from '@/lib/api';
 import { Test, Question, Course } from '@/types';
+import { getCurrentUser } from '@/lib/auth';
 import { ArrowLeft, Upload, Sparkles, FileText, Users, AlertCircle, PenLine } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
@@ -29,6 +30,40 @@ type CreateTestFormData = z.infer<typeof createTestSchema>;
 // ============================================
 
 type PageState = 'form' | 'choose' | 'upload' | 'analyzing' | 'results';
+
+function CourseSelector({ courses, register }: { courses: Course[]; register: any }) {
+  const currentUser = getCurrentUser();
+  const myCourses = courses.filter(c => !c.institution_id);
+  const institutionalCourses = courses.filter(c => !!c.institution_id);
+
+  return (
+    <select
+      id="courseId"
+      {...register('courseId')}
+      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900"
+    >
+      <option value="">Selecciona un curso</option>
+      {myCourses.length > 0 && (
+        <optgroup label="Mis cursos">
+          {myCourses.map((course) => (
+            <option key={course.id} value={course.id}>
+              {course.name} ({course.year}) - {course._count?.students || 0} estudiantes
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {institutionalCourses.length > 0 && (
+        <optgroup label="Cursos institucionales">
+          {institutionalCourses.map((course) => (
+            <option key={course.id} value={course.id}>
+              {course.name} ({course.year}) - {course._count?.students || 0} estudiantes
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </select>
+  );
+}
 
 export default function NewTestPage() {
   const router = useRouter();
@@ -237,18 +272,7 @@ export default function NewTestPage() {
                         <span className="text-gray-500">Cargando cursos...</span>
                       </div>
                     ) : (
-                      <select
-                        id="courseId"
-                        {...form.register('courseId')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900"
-                      >
-                        <option value="">Selecciona un curso</option>
-                        {courses.map((course) => (
-                          <option key={course.id} value={course.id}>
-                            {course.name} ({course.year}) - {course._count?.students || 0} estudiantes
-                          </option>
-                        ))}
-                      </select>
+                      <CourseSelector courses={courses} register={form.register} />
                     )}
                     {form.formState.errors.courseId && (
                       <p className="mt-1 text-sm text-red-600">

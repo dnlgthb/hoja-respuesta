@@ -7,6 +7,8 @@ export interface Teacher {
   email: string;
   name: string;
   is_verified?: boolean;
+  is_institution_admin?: boolean;
+  institution_id?: string | null;
   createdAt: string;
 }
 
@@ -124,9 +126,12 @@ export interface Answer {
 export interface Course {
   id: string;
   teacher_id: string;
+  institution_id?: string | null;
   name: string;
   year: number;
   created_at: string;
+  teacher?: { id: string; name: string };
+  institution?: { id: string; name: string } | null;
   students?: CourseStudent[];
   _count?: {
     students: number;
@@ -145,6 +150,7 @@ export interface CourseStudent {
 export interface CreateCourseRequest {
   name: string;
   year: number;
+  institutional?: boolean;
 }
 
 export interface UpdateCourseRequest {

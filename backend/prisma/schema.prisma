@@ -15,17 +15,18 @@ datasource db {
 // MODELO: PROFESORES
 // ============================================
 model Teacher {
-  id                 String    @id @default(cuid())
-  email              String    @unique
-  password_hash      String
-  name               String
-  is_verified        Boolean   @default(false)
-  verification_token String?   @unique
-  reset_token        String?   @unique
-  reset_token_exp    DateTime?
-  is_beta            Boolean   @default(false)
-  institution_id     String?
-  created_at         DateTime  @default(now())
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  password_hash        String
+  name                 String
+  is_verified          Boolean   @default(false)
+  verification_token   String?   @unique
+  reset_token          String?   @unique
+  reset_token_exp      DateTime?
+  is_beta              Boolean   @default(false)
+  is_institution_admin Boolean   @default(false)
+  institution_id       String?
+  created_at           DateTime  @default(now())
 
   // Relaciones
   tests          Test[]
@@ -42,19 +43,22 @@ model Teacher {
 // MODELO: CURSOS
 // ============================================
 model Course {
-  id         String   @id @default(uuid())
-  teacher_id String
-  name       String   // Ej: "3° Medio A"
-  year       Int      // Ej: 2025
-  created_at DateTime @default(now())
+  id             String   @id @default(uuid())
+  teacher_id     String
+  institution_id String?
+  name           String   // Ej: "3° Medio A"
+  year           Int      // Ej: 2025
+  created_at     DateTime @default(now())
 
   // Relaciones
-  teacher  Teacher         @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
-  students CourseStudent[]
-  tests    Test[]
+  teacher     Teacher         @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  institution Institution?    @relation(fields: [institution_id], references: [id])
+  students    CourseStudent[]
+  tests       Test[]
 
   @@map("courses")
   @@index([teacher_id])
+  @@index([institution_id])
 }
 
 // ============================================
@@ -250,6 +254,7 @@ model Institution {
 
   // Relaciones
   teachers     Teacher[]
+  courses      Course[]
   subscription InstitutionSubscription?
 
   @@map("institutions")

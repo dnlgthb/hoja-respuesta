@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { coursesAPI } from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
 import { Course, CourseStudent } from '@/types';
 import {
   ArrowLeft,
@@ -18,6 +19,7 @@ import {
   Check,
   Pencil,
   Save,
+  Building2,
 } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
@@ -30,6 +32,7 @@ export default function CursoDetallePage() {
   const router = useRouter();
   const params = useParams();
   const courseId = params.id as string;
+  const currentUser = getCurrentUser();
 
   // Course state
   const [course, setCourse] = useState<Course | null>(null);
@@ -58,6 +61,10 @@ export default function CursoDetallePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  // Derived: is current user the owner?
+  const isOwner = course?.teacher_id === currentUser?.id;
+  const isInstitutional = !!course?.institution_id;
 
   // Load course
   const loadCourse = useCallback(async () => {
@@ -297,167 +304,184 @@ export default function CursoDetallePage() {
             ) : (
               <div className="flex items-start justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{course.name}</h2>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h2 className="text-2xl font-bold text-gray-900">{course.name}</h2>
+                    {isInstitutional && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                        <Building2 className="w-3 h-3" />
+                        Institucional
+                      </span>
+                    )}
+                  </div>
                   <p className="text-gray-600 mt-1">Año {course.year}</p>
+                  {isInstitutional && !isOwner && course.teacher && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Creado por {course.teacher.name}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-2 text-gray-600">
                     <Users className="w-4 h-4" />
                     <span>{course.students?.length || 0} estudiantes</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="p-2 text-gray-600 hover:text-primary hover:bg-gray-100 rounded-md"
-                    title="Editar"
-                  >
-                    <Pencil className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md"
-                    title="Eliminar"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Add Students Section */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Agregar Estudiantes</h3>
-
-            {/* Upload Area */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                isDragging
-                  ? 'border-primary bg-primary/5'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              {!uploadFile ? (
-                <>
-                  <FileSpreadsheet className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600 mb-2">
-                    Arrastra un archivo Excel o CSV aquí
-                  </p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    El archivo debe tener una columna "nombre" (o similar)
-                  </p>
-                  <label className="inline-flex items-center gap-2 btn-primary px-4 py-2 cursor-pointer">
-                    <Upload className="w-4 h-4" />
-                    Seleccionar archivo
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                  </label>
-                </>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-center gap-2 text-gray-700">
-                    <FileSpreadsheet className="w-6 h-6 text-primary" />
-                    <span className="font-medium">{uploadFile.name}</span>
-                    <button
-                      onClick={cancelUpload}
-                      className="p-1 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <button
-                    onClick={handleUpload}
-                    disabled={isUploading}
-                    className="px-6 py-2 flex items-center gap-2 mx-auto rounded-md font-medium text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
-                  >
-                    {isUploading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Procesando...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-4 h-4" />
-                        Subir y agregar estudiantes
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Upload Messages */}
-            {uploadError && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-600">{uploadError}</p>
-              </div>
-            )}
-
-            {uploadSuccess && (
-              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-start gap-2">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-green-600">{uploadSuccess}</p>
-              </div>
-            )}
-
-            {/* Manual Add */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              {!showManualAdd ? (
-                <button
-                  onClick={() => setShowManualAdd(true)}
-                  className="flex items-center gap-2 text-primary hover:text-primary/80"
-                >
-                  <Plus className="w-4 h-4" />
-                  Agregar estudiante manualmente
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={manualName}
-                      onChange={(e) => setManualName(e.target.value)}
-                      placeholder="Nombre del estudiante"
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-primary text-gray-900 placeholder:text-gray-400"
-                    />
-                    <input
-                      type="email"
-                      value={manualEmail}
-                      onChange={(e) => setManualEmail(e.target.value)}
-                      placeholder="Email (opcional)"
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-primary text-gray-900 placeholder:text-gray-400"
-                    />
-                  </div>
+                {isOwner && (
                   <div className="flex gap-2">
                     <button
-                      onClick={handleManualAdd}
-                      disabled={isAddingManual || !manualName.trim()}
-                      className="btn-primary px-4 py-2 flex items-center gap-2"
+                      onClick={() => setIsEditing(true)}
+                      className="p-2 text-gray-600 hover:text-primary hover:bg-gray-100 rounded-md"
+                      title="Editar"
                     >
-                      {isAddingManual ? 'Agregando...' : 'Agregar'}
+                      <Pencil className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={() => {
-                        setShowManualAdd(false);
-                        setManualName('');
-                        setManualEmail('');
-                      }}
-                      className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      title="Eliminar"
                     >
-                      Cancelar
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Add Students Section — only for owner */}
+          {isOwner && (
+            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Agregar Estudiantes</h3>
+
+              {/* Upload Area */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                  isDragging
+                    ? 'border-primary bg-primary/5'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                {!uploadFile ? (
+                  <>
+                    <FileSpreadsheet className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 mb-2">
+                      Arrastra un archivo Excel o CSV aquí
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      El archivo debe tener una columna "nombre" (o similar)
+                    </p>
+                    <label className="inline-flex items-center gap-2 btn-primary px-4 py-2 cursor-pointer">
+                      <Upload className="w-4 h-4" />
+                      Seleccionar archivo
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 text-gray-700">
+                      <FileSpreadsheet className="w-6 h-6 text-primary" />
+                      <span className="font-medium">{uploadFile.name}</span>
+                      <button
+                        onClick={cancelUpload}
+                        className="p-1 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleUpload}
+                      disabled={isUploading}
+                      className="px-6 py-2 flex items-center gap-2 mx-auto rounded-md font-medium text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
+                    >
+                      {isUploading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Subir y agregar estudiantes
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload Messages */}
+              {uploadError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-600">{uploadError}</p>
                 </div>
               )}
+
+              {uploadSuccess && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-start gap-2">
+                  <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-green-600">{uploadSuccess}</p>
+                </div>
+              )}
+
+              {/* Manual Add */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                {!showManualAdd ? (
+                  <button
+                    onClick={() => setShowManualAdd(true)}
+                    className="flex items-center gap-2 text-primary hover:text-primary/80"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar estudiante manualmente
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={manualName}
+                        onChange={(e) => setManualName(e.target.value)}
+                        placeholder="Nombre del estudiante"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-primary text-gray-900 placeholder:text-gray-400"
+                      />
+                      <input
+                        type="email"
+                        value={manualEmail}
+                        onChange={(e) => setManualEmail(e.target.value)}
+                        placeholder="Email (opcional)"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-primary text-gray-900 placeholder:text-gray-400"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleManualAdd}
+                        disabled={isAddingManual || !manualName.trim()}
+                        className="btn-primary px-4 py-2 flex items-center gap-2"
+                      >
+                        {isAddingManual ? 'Agregando...' : 'Agregar'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowManualAdd(false);
+                          setManualName('');
+                          setManualEmail('');
+                        }}
+                        className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Students List */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -476,7 +500,7 @@ export default function CursoDetallePage() {
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Nombre</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Email</th>
-                      <th className="w-16"></th>
+                      {isOwner && <th className="w-16"></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -488,15 +512,17 @@ export default function CursoDetallePage() {
                             <span className="text-gray-400 italic">sin email</span>
                           )}
                         </td>
-                        <td className="py-3 px-4">
-                          <button
-                            onClick={() => handleDeleteStudent(student.id)}
-                            className="p-1 text-gray-400 hover:text-red-600"
-                            title="Eliminar estudiante"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+                        {isOwner && (
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => handleDeleteStudent(student.id)}
+                              className="p-1 text-gray-400 hover:text-red-600"
+                              title="Eliminar estudiante"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -513,7 +539,7 @@ export default function CursoDetallePage() {
                   ¿Eliminar curso?
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  Esta acción eliminará el curso "{course.name}" y todos sus estudiantes. Esta acción no se puede deshacer.
+                  Esta acción eliminará el curso &quot;{course.name}&quot; y todos sus estudiantes. Esta acción no se puede deshacer.
                 </p>
                 <div className="flex gap-3 justify-end">
                   <button

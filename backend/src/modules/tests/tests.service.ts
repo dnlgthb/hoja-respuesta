@@ -40,12 +40,22 @@ export class TestsService {
   async createTest(data: CreateTestData) {
     const { title, teacherId, courseId } = data;
 
-    // Si se proporciona courseId, verificar que pertenezca al profesor
+    // Si se proporciona courseId, verificar que pertenezca al profesor o a su institución
     if (courseId) {
+      const teacher = await prisma.teacher.findUnique({
+        where: { id: teacherId },
+        select: { institution_id: true },
+      });
+
+      const whereConditions: any[] = [{ teacher_id: teacherId }];
+      if (teacher?.institution_id) {
+        whereConditions.push({ institution_id: teacher.institution_id });
+      }
+
       const course = await prisma.course.findFirst({
         where: {
           id: courseId,
-          teacher_id: teacherId,
+          OR: whereConditions,
         },
       });
       if (!course) {
@@ -399,7 +409,7 @@ export class TestsService {
         image_url: null,
         image_description: null,
         image_page: null,
-        points: 1,
+        points: q.points || 1,
       }));
     } else {
       console.log('📄 Using GPT-4o Vision for PDF analysis (Mathpix not configured)');

@@ -8,6 +8,7 @@ export interface CreateCourseData {
   name: string;
   year: number;
   teacherId: string;
+  institutionId?: string;
 }
 
 export interface UpdateCourseData {
@@ -26,15 +27,18 @@ export class CoursesService {
    * Crear un nuevo curso
    */
   async createCourse(data: CreateCourseData) {
-    const { name, year, teacherId } = data;
+    const { name, year, teacherId, institutionId } = data;
 
     const course = await prisma.course.create({
       data: {
         name,
         year,
         teacher_id: teacherId,
+        institution_id: institutionId || null,
       },
       include: {
+        teacher: { select: { id: true, name: true } },
+        institution: { select: { id: true, name: true } },
         _count: {
           select: {
             students: true,
@@ -51,11 +55,24 @@ export class CoursesService {
    * Listar todos los cursos de un profesor
    */
   async getCoursesByTeacher(teacherId: string) {
+    // Get teacher's institution_id
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId },
+      select: { institution_id: true },
+    });
+
+    const whereConditions: any[] = [{ teacher_id: teacherId }];
+    if (teacher?.institution_id) {
+      whereConditions.push({ institution_id: teacher.institution_id });
+    }
+
     const courses = await prisma.course.findMany({
       where: {
-        teacher_id: teacherId,
+        OR: whereConditions,
       },
       include: {
+        teacher: { select: { id: true, name: true } },
+        institution: { select: { id: true, name: true } },
         _count: {
           select: {
             students: true,
@@ -76,12 +93,25 @@ export class CoursesService {
    * Obtener un curso por ID con sus estudiantes
    */
   async getCourseById(courseId: string, teacherId: string) {
+    // Get teacher's institution_id
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId },
+      select: { institution_id: true },
+    });
+
+    const whereConditions: any[] = [{ teacher_id: teacherId }];
+    if (teacher?.institution_id) {
+      whereConditions.push({ institution_id: teacher.institution_id });
+    }
+
     const course = await prisma.course.findFirst({
       where: {
         id: courseId,
-        teacher_id: teacherId,
+        OR: whereConditions,
       },
       include: {
+        teacher: { select: { id: true, name: true } },
+        institution: { select: { id: true, name: true } },
         students: {
           orderBy: {
             student_name: 'asc',
@@ -103,20 +133,40 @@ export class CoursesService {
   }
 
   /**
-   * Actualizar un curso
+   * Verify that the teacher is the creator of the course (for edit/delete/manage students)
    */
-  async updateCourse(courseId: string, teacherId: string, data: UpdateCourseData) {
-    // Verificar que el curso pertenece al profesor
-    const existingCourse = await prisma.course.findFirst({
+  private async verifyManageAccess(courseId: string, teacherId: string) {
+    const course = await prisma.course.findFirst({
       where: {
         id: courseId,
         teacher_id: teacherId,
       },
     });
-
-    if (!existingCourse) {
-      throw new Error('Curso no encontrado');
+    if (!course) {
+      throw new Error('Curso no encontrado o no tienes permisos para gestionarlo');
     }
+    return course;
+  }
+
+  /**
+   * Check if a teacher is an institution admin and return their institutionId
+   */
+  async isInstitutionAdmin(teacherId: string): Promise<{ isAdmin: boolean; institutionId: string | null }> {
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId },
+      select: { is_institution_admin: true, institution_id: true },
+    });
+    return {
+      isAdmin: teacher?.is_institution_admin ?? false,
+      institutionId: teacher?.institution_id ?? null,
+    };
+  }
+
+  /**
+   * Actualizar un curso
+   */
+  async updateCourse(courseId: string, teacherId: string, data: UpdateCourseData) {
+    await this.verifyManageAccess(courseId, teacherId);
 
     const updatedCourse = await prisma.course.update({
       where: { id: courseId },
@@ -141,17 +191,7 @@ export class CoursesService {
    * Eliminar un curso
    */
   async deleteCourse(courseId: string, teacherId: string) {
-    // Verificar que el curso pertenece al profesor
-    const existingCourse = await prisma.course.findFirst({
-      where: {
-        id: courseId,
-        teacher_id: teacherId,
-      },
-    });
-
-    if (!existingCourse) {
-      throw new Error('Curso no encontrado');
-    }
+    await this.verifyManageAccess(courseId, teacherId);
 
     // Eliminar el curso (Cascade eliminará estudiantes automáticamente)
     await prisma.course.delete({
@@ -165,8 +205,8 @@ export class CoursesService {
    * Agregar estudiantes a un curso (desde JSON array)
    */
   async addStudents(courseId: string, teacherId: string, students: StudentData[]) {
-    // Verificar que el curso pertenece al profesor
-    const course = await this.getCourseById(courseId, teacherId);
+    // Only the creator can manage students
+    await this.verifyManageAccess(courseId, teacherId);
 
     if (!students || students.length === 0) {
       throw new Error('Debe proporcionar al menos un estudiante');
@@ -209,8 +249,8 @@ export class CoursesService {
    * Eliminar un estudiante de un curso
    */
   async deleteStudent(courseId: string, studentId: string, teacherId: string) {
-    // Verificar que el curso pertenece al profesor
-    await this.getCourseById(courseId, teacherId);
+    // Only the creator can manage students
+    await this.verifyManageAccess(courseId, teacherId);
 
     // Verificar que el estudiante existe en el curso
     const student = await prisma.courseStudent.findFirst({
@@ -304,8 +344,8 @@ export class CoursesService {
    * Subir archivo Excel/CSV y agregar estudiantes (con análisis IA)
    */
   async uploadStudents(courseId: string, teacherId: string, buffer: Buffer, originalName: string) {
-    // Verificar que el curso pertenece al profesor
-    await this.getCourseById(courseId, teacherId);
+    // Only the creator can manage students
+    await this.verifyManageAccess(courseId, teacherId);
 
     let students: StudentData[] = [];
     let usedAI = false;

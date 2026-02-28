@@ -1453,7 +1453,7 @@ async function visionVerifyFigureQuestions(
 // =============================================
 
 const ANSWER_SHEET_PROMPT = `Eres un asistente que analiza transcripciones OCR de pruebas/exámenes educacionales chilenos.
-Tu tarea es SOLO identificar las secciones y preguntas con sus tipos. NO extraigas el texto, opciones, ni contenido.
+Tu tarea es SOLO identificar las secciones y preguntas con sus tipos y puntajes. NO extraigas el texto, opciones, ni contenido.
 
 Reglas:
 - Detecta secciones del examen si las hay (ej: "I. Selección Múltiple", "II. Verdadero o Falso", "Sección A", etc.)
@@ -1468,14 +1468,15 @@ Reglas:
 - Si hay sub-preguntas (a, b, c), cada una es una pregunta separada
 - Ignora instrucciones generales, encabezados, y texto introductorio que no sean preguntas
 - Si una sección tiene título, inclúyelo en "section". Si no hay secciones, omite "section".
+- Si la prueba indica puntaje por pregunta (ej: "(2 pts)", "3 puntos", "puntaje: 4"), extráelo en el campo "points" (número). Si el puntaje se indica por sección (ej: "10 puntos" para 5 preguntas), divídelo equitativamente. Si no se indica puntaje, omite el campo "points".
 
 Responde SOLO con JSON válido en este formato exacto:
 {
   "questions": [
-    { "number": "1", "type": "MULTIPLE_CHOICE", "options_count": 4, "section": "I. Selección Múltiple" },
-    { "number": "2", "type": "MULTIPLE_CHOICE", "options_count": 4, "section": "I. Selección Múltiple" },
-    { "number": "3", "type": "TRUE_FALSE", "section": "II. Verdadero o Falso" },
-    { "number": "4", "type": "DEVELOPMENT", "section": "III. Desarrollo" }
+    { "number": "1", "type": "MULTIPLE_CHOICE", "options_count": 4, "points": 2, "section": "I. Selección Múltiple" },
+    { "number": "2", "type": "MULTIPLE_CHOICE", "options_count": 4, "points": 2, "section": "I. Selección Múltiple" },
+    { "number": "3", "type": "TRUE_FALSE", "points": 1, "section": "II. Verdadero o Falso" },
+    { "number": "4", "type": "DEVELOPMENT", "points": 5, "section": "III. Desarrollo" }
   ]
 }`;
 
@@ -1490,7 +1491,7 @@ Responde SOLO con JSON válido en este formato exacto:
 export async function extractQuestionListMathpix(
   pdfBuffer: Buffer,
   onProgress?: ProgressCallback,
-): Promise<Array<{ number: string; type: string; options_count?: number; section?: string }>> {
+): Promise<Array<{ number: string; type: string; options_count?: number; section?: string; points?: number }>> {
   const startTime = Date.now();
 
   // Phase 1: Mathpix OCR
@@ -1524,7 +1525,7 @@ export async function extractQuestionListMathpix(
     message: 'Identificando preguntas...',
   });
 
-  let questions: Array<{ number: string; type: string; options_count?: number; section?: string }> = [];
+  let questions: Array<{ number: string; type: string; options_count?: number; section?: string; points?: number }> = [];
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

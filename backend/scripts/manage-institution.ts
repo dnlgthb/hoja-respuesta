@@ -277,6 +277,44 @@ async function institutionStatus(args: Record<string, string>) {
 }
 
 // ============================================
+// SET INSTITUTION ADMIN
+// ============================================
+
+async function setAdmin(args: Record<string, string>) {
+  const email = args['email'];
+
+  if (!email) {
+    console.error('Uso: set-admin --email profesor@colegio.cl');
+    process.exit(1);
+  }
+
+  const teacher = await prisma.teacher.findUnique({
+    where: { email },
+    include: { institution: true },
+  });
+
+  if (!teacher) {
+    console.error(`Profesor no encontrado: ${email}`);
+    process.exit(1);
+  }
+
+  if (!teacher.institution_id) {
+    console.error(`El profesor ${email} no está vinculado a ninguna institución`);
+    process.exit(1);
+  }
+
+  await prisma.teacher.update({
+    where: { id: teacher.id },
+    data: { is_institution_admin: true },
+  });
+
+  console.log(`\nAdmin configurado:`);
+  console.log(`  Profesor: ${teacher.name} <${teacher.email}>`);
+  console.log(`  Institución: ${teacher.institution?.name || teacher.institution_id}`);
+  console.log(`  is_institution_admin: true`);
+}
+
+// ============================================
 // MAIN
 // ============================================
 
@@ -298,12 +336,16 @@ async function main() {
       case 'status':
         await institutionStatus(args);
         break;
+      case 'set-admin':
+        await setAdmin(args);
+        break;
       default:
         console.log('Comandos disponibles:');
         console.log('  create        Crear nueva institución con suscripción');
         console.log('  add-teachers  Agregar profesores a una institución');
         console.log('  list          Listar todas las instituciones');
         console.log('  status        Ver estado detallado de una institución');
+        console.log('  set-admin     Marcar un profesor como admin de su institución');
         break;
     }
   } finally {

@@ -15,6 +15,8 @@ export const ROUTES = {
   RESET_PASSWORD: '/reset-password',
   VERIFY_EMAIL: '/verify-email',
   PLANES: '/planes',
+  TERMINOS: '/terminos',
+  PRIVACIDAD: '/privacidad',
 };
 
 export const STORAGE_KEYS = {

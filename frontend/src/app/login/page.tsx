@@ -243,7 +243,10 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
-          Al continuar, aceptas nuestros términos y condiciones
+          Al continuar, aceptas nuestros{' '}
+          <Link href="/terminos" className="text-[#14B8A6] hover:underline">términos de servicio</Link>
+          {' '}y{' '}
+          <Link href="/privacidad" className="text-[#14B8A6] hover:underline">política de privacidad</Link>
         </p>
       </div>
     </div>

@@ -36,7 +36,7 @@ async function flowPost(endpoint: string, params: Record<string, string>): Promi
     body: body.toString(),
   });
 
-  const data = await response.json();
+  const data = await response.json() as Record<string, any>;
 
   if (!response.ok) {
     console.error('[Flow] Error response:', data);
@@ -58,7 +58,7 @@ async function flowGet(endpoint: string, params: Record<string, string> = {}): P
   console.log(`[Flow] GET ${url}`);
 
   const response = await fetch(url, { method: 'GET' });
-  const data = await response.json();
+  const data = await response.json() as Record<string, any>;
 
   if (!response.ok) {
     console.error('[Flow] Error response:', data);

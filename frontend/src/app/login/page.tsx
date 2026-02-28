@@ -9,7 +9,7 @@ import { authAPI } from '@/lib/api';
 import { setToken, setCurrentUser } from '@/lib/auth';
 import { ROUTES } from '@/config/constants';
 import Link from 'next/link';
-import { LogIn, UserPlus, CheckCircle } from 'lucide-react';
+import { LogIn, UserPlus, CheckCircle, Lock } from 'lucide-react';
 
 // ============================================
 // VALIDACIÓN CON ZOD
@@ -223,89 +223,21 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* Register Form */}
+          {/* Register — Beta cerrada */}
           {activeTab === 'register' && (
-            <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
-              <div>
-                <label htmlFor="register-name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre completo
-                </label>
-                <input
-                  id="register-name"
-                  type="text"
-                  {...registerForm.register('name')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent text-gray-900"
-                  placeholder="Juan Pérez"
-                />
-                {registerForm.formState.errors.name && (
-                  <p className="mt-1 text-sm text-red-600">
-                    {registerForm.formState.errors.name.message}
-                  </p>
-                )}
+            <div className="text-center py-8 space-y-4">
+              <div className="mx-auto w-16 h-16 bg-[#14B8A6]/10 rounded-full flex items-center justify-center">
+                <Lock className="w-8 h-8 text-[#14B8A6]" />
               </div>
-
-              <div>
-                <label htmlFor="register-email" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <input
-                  id="register-email"
-                  type="email"
-                  {...registerForm.register('email')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent text-gray-900"
-                  placeholder="profesor@ejemplo.com"
-                />
-                {registerForm.formState.errors.email && (
-                  <p className="mt-1 text-sm text-red-600">
-                    {registerForm.formState.errors.email.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="register-password" className="block text-sm font-medium text-gray-700 mb-1">
-                  Contraseña
-                </label>
-                <input
-                  id="register-password"
-                  type="password"
-                  {...registerForm.register('password')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent text-gray-900"
-                  placeholder="••••••••"
-                />
-                {registerForm.formState.errors.password && (
-                  <p className="mt-1 text-sm text-red-600">
-                    {registerForm.formState.errors.password.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="register-confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirmar contraseña
-                </label>
-                <input
-                  id="register-confirm-password"
-                  type="password"
-                  {...registerForm.register('confirmPassword')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#14B8A6] focus:border-transparent text-gray-900"
-                  placeholder="••••••••"
-                />
-                {registerForm.formState.errors.confirmPassword && (
-                  <p className="mt-1 text-sm text-red-600">
-                    {registerForm.formState.errors.confirmPassword.message}
-                  </p>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full btn-primary py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? 'Creando cuenta...' : 'Crear Cuenta'}
-              </button>
-            </form>
+              <h3 className="text-lg font-semibold text-gray-900">Beta cerrada</h3>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                Aproba se encuentra en fase de beta cerrada.<br />
+                Pronto habilitaremos el registro público.
+              </p>
+              <p className="text-gray-500 text-xs">
+                Si ya tienes una cuenta, usa la pestaña de Iniciar Sesión.
+              </p>
+            </div>
           )}
         </div>
 

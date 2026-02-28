@@ -22,6 +22,8 @@ app.use(cors({
     'http://localhost:3000',
     'http://localhost:3002',
     'https://hoja-respuesta.vercel.app',
+    'https://aproba.ai',
+    'https://www.aproba.ai',
     ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
   ],
   credentials: true,

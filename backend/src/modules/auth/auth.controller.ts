@@ -9,20 +9,12 @@ export class AuthController {
    */
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { email, password, name } = req.body;
-
-      if (!email || !password || !name) {
-        res.status(400).json({ error: 'Email, password y nombre son requeridos' });
-        return;
-      }
-
-      if (password.length < 6) {
-        res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
-        return;
-      }
-
-      const result = await authService.register({ email, password, name });
-      res.status(201).json(result);
+      // Beta cerrada — registro público deshabilitado
+      res.status(403).json({
+        error: 'registration_closed',
+        message: 'Aproba se encuentra en beta cerrada. Pronto habilitaremos el registro público.',
+      });
+      return;
     } catch (error) {
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });

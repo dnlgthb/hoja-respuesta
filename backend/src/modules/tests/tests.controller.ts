@@ -220,6 +220,22 @@ export class TestsController {
 
       const fileBuffer = req.file.buffer;
 
+      // Validar cantidad de páginas (máximo 60)
+      const MAX_PDF_PAGES = 60;
+      try {
+        const { PDFDocument } = await import('pdf-lib');
+        const pdfDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+        const pageCount = pdfDoc.getPageCount();
+        if (pageCount > MAX_PDF_PAGES) {
+          res.status(400).json({
+            error: `El PDF tiene ${pageCount} páginas. El máximo permitido es ${MAX_PDF_PAGES}.`,
+          });
+          return;
+        }
+      } catch (pdfError: any) {
+        // If pdf-lib can't parse, let Mathpix handle it downstream
+      }
+
       // SSE streaming para progreso en tiempo real
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -660,6 +676,22 @@ export class TestsController {
       }
 
       const fileBuffer = req.file.buffer;
+
+      // Validar cantidad de páginas (máximo 60)
+      const MAX_RUBRIC_PAGES = 60;
+      try {
+        const { PDFDocument } = await import('pdf-lib');
+        const pdfDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+        const pageCount = pdfDoc.getPageCount();
+        if (pageCount > MAX_RUBRIC_PAGES) {
+          res.status(400).json({
+            error: `El PDF tiene ${pageCount} páginas. El máximo permitido es ${MAX_RUBRIC_PAGES}.`,
+          });
+          return;
+        }
+      } catch (pdfError: any) {
+        // If pdf-lib can't parse, let downstream handle it
+      }
 
       // SSE streaming para progreso en tiempo real
       res.writeHead(200, {

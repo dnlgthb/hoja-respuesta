@@ -10,7 +10,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
 import { testsAPI, coursesAPI } from '@/lib/api';
 import { Test, Question, Course } from '@/types';
-import { ArrowLeft, Upload, Sparkles, FileText, Users, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, Sparkles, FileText, Users, AlertCircle, PenLine } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
 // ============================================
@@ -28,7 +28,7 @@ type CreateTestFormData = z.infer<typeof createTestSchema>;
 // ESTADOS DEL COMPONENTE
 // ============================================
 
-type PageState = 'form' | 'upload' | 'analyzing' | 'results';
+type PageState = 'form' | 'choose' | 'upload' | 'analyzing' | 'results';
 
 export default function NewTestPage() {
   const router = useRouter();
@@ -90,7 +90,7 @@ export default function NewTestPage() {
         courseId: data.courseId,
       });
       setCurrentTest(test);
-      setPageState('upload');
+      setPageState('choose');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear la prueba');
     } finally {
@@ -285,6 +285,55 @@ export default function NewTestPage() {
                   </button>
                 </form>
               )}
+            </div>
+          )}
+
+          {/* STEP 1.5: CHOOSE MODE */}
+          {pageState === 'choose' && currentTest && (
+            <div className="space-y-6">
+              {/* Course info */}
+              {currentTest.course && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Users className="w-4 h-4" />
+                    <span className="font-medium">Curso:</span>
+                    <span>{currentTest.course.name} ({currentTest.course.year})</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  ¿Cómo deseas crear las preguntas?
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  Puedes subir un PDF con la prueba o crear las preguntas directamente en el editor.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setPageState('upload')}
+                    className="flex flex-col items-center gap-3 p-6 border-2 border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+                  >
+                    <Upload className="w-10 h-10 text-primary" />
+                    <span className="font-semibold text-gray-900">Subir PDF</span>
+                    <span className="text-sm text-gray-500 text-center">
+                      Sube el PDF de la prueba y la IA detectará las preguntas automáticamente
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => router.push(ROUTES.TEST_DETAIL(currentTest.id))}
+                    className="flex flex-col items-center gap-3 p-6 border-2 border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+                  >
+                    <PenLine className="w-10 h-10 text-primary" />
+                    <span className="font-semibold text-gray-900">Crear manualmente</span>
+                    <span className="text-sm text-gray-500 text-center">
+                      Escribe las preguntas directamente en el editor, sin PDF
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

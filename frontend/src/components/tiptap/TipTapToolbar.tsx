@@ -12,7 +12,7 @@ interface TipTapToolbarProps {
 }
 
 export default function TipTapToolbar({ editor, onImageUpload, disabled }: TipTapToolbarProps) {
-  const [showMathButtons, setShowMathButtons] = useState(true);
+  const [showMathButtons, setShowMathButtons] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

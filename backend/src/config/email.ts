@@ -222,4 +222,116 @@ export async function sendResultsEmail(result: StudentResult): Promise<{ success
   }
 }
 
+// ============================================
+// EMAIL DE RESTABLECIMIENTO DE CONTRASEÑA
+// ============================================
+
+const FROM_EMAIL_NOREPLY = 'Aproba <noreply@aproba.ai>';
+
+export async function sendPasswordResetEmail(
+  email: string,
+  name: string,
+  resetUrl: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 12px 12px 0 0; padding: 32px; text-align: center;">
+      <h1 style="color: white; margin: 0; font-size: 24px;">Restablecer tu contraseña</h1>
+    </div>
+    <div style="background: white; padding: 32px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+      <p style="color: #374151; font-size: 16px;">Hola <strong>${name}</strong>,</p>
+      <p style="color: #374151; font-size: 14px;">Recibimos una solicitud para restablecer la contraseña de tu cuenta en Aproba. Haz clic en el botón de abajo para crear una nueva contraseña:</p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${resetUrl}" style="background-color: #6366f1; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Restablecer contraseña</a>
+      </div>
+      <p style="color: #6b7280; font-size: 13px;">Este enlace expira en <strong>1 hora</strong>. Si no solicitaste este cambio, puedes ignorar este correo.</p>
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center;">
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">Este correo fue enviado automáticamente por Aproba.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL_NOREPLY,
+      to: email,
+      subject: 'Restablecer tu contraseña — Aproba',
+      html,
+    });
+
+    if (error) {
+      console.error('Error sending password reset email:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('Error sending password reset email:', err);
+    return { success: false, error: err instanceof Error ? err.message : 'Error desconocido' };
+  }
+}
+
+// ============================================
+// EMAIL DE VERIFICACIÓN
+// ============================================
+
+export async function sendVerificationEmail(
+  email: string,
+  name: string,
+  verifyUrl: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 12px 12px 0 0; padding: 32px; text-align: center;">
+      <h1 style="color: white; margin: 0; font-size: 24px;">Verifica tu email</h1>
+    </div>
+    <div style="background: white; padding: 32px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+      <p style="color: #374151; font-size: 16px;">Hola <strong>${name}</strong>,</p>
+      <p style="color: #374151; font-size: 14px;">Gracias por registrarte en Aproba. Para verificar tu cuenta, haz clic en el botón de abajo:</p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${verifyUrl}" style="background-color: #16a34a; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Verificar email</a>
+      </div>
+      <p style="color: #6b7280; font-size: 13px;">Si no creaste una cuenta en Aproba, puedes ignorar este correo.</p>
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center;">
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">Este correo fue enviado automáticamente por Aproba.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL_NOREPLY,
+      to: email,
+      subject: 'Verifica tu email — Aproba',
+      html,
+    });
+
+    if (error) {
+      console.error('Error sending verification email:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('Error sending verification email:', err);
+    return { success: false, error: err instanceof Error ? err.message : 'Error desconocido' };
+  }
+}
+
 export default resend;

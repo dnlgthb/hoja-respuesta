@@ -66,6 +66,7 @@ interface QuestionEditorProps {
   requireFalseJustification?: boolean;
   isFirst: boolean;
   isLast: boolean;
+  isManualMode?: boolean;
 }
 
 export default function QuestionEditor({
@@ -80,6 +81,7 @@ export default function QuestionEditor({
   requireFalseJustification = false,
   isFirst,
   isLast,
+  isManualMode = false,
 }: QuestionEditorProps) {
   // Usar snake_case del backend como fallback
   const questionLabel = question.questionLabel || question.question_label || String(index + 1);
@@ -106,7 +108,7 @@ export default function QuestionEditor({
   const [localRequireUnits, setLocalRequireUnits] = useState(requireUnits);
   const [localUnitPenalty, setLocalUnitPenalty] = useState(String(unitPenalty * 100));
   const [isExpanded, setIsExpanded] = useState(true);
-  const [isEditingText, setIsEditingText] = useState(false);
+  const [isEditingText, setIsEditingText] = useState(isManualMode && !localText);
   const [isEditingOptions, setIsEditingOptions] = useState(false);
   const [optionMathMode, setOptionMathMode] = useState<boolean[]>(
     () => (question.options || []).map(opt => /\$/.test(opt))
@@ -306,7 +308,7 @@ export default function QuestionEditor({
             {localText ? (
               <RichMathText text={truncateLatexAware(localText, 80)} />
             ) : (
-              <span className="italic text-gray-400">Hoja de respuesta</span>
+              <span className="italic text-gray-400">{isManualMode ? 'Sin enunciado' : 'Hoja de respuesta'}</span>
             )}
           </span>
         </div>
@@ -392,8 +394,8 @@ export default function QuestionEditor({
           </div>
 
           {/* Enunciado: unified TipTap editor (context + images + question text) */}
-          {/* Hidden in answer-sheet mode (no text) — professor only needs pauta fields */}
-          {localText ? (
+          {/* Hidden in answer-sheet mode (no text) — unless manual mode where prof writes questions */}
+          {(localText || isManualMode) ? (
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200">
                 <span className="text-sm font-medium text-gray-700">Enunciado</span>
@@ -725,34 +727,6 @@ export default function QuestionEditor({
                   </p>
                 </div>
 
-                <div className="bg-gray-50 rounded-md p-3">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={localRequireUnits}
-                      onChange={(e) => handleRequireUnitsChange(e.target.checked)}
-                      className="mt-1 w-4 h-4 text-primary rounded focus:ring-primary"
-                    />
-                    <div>
-                      <span className="font-medium text-gray-900">Exigir unidades en la respuesta</span>
-                      <p className="text-xs text-gray-500">La IA verificará si el estudiante incluye las unidades correctas</p>
-                    </div>
-                  </label>
-                  {localRequireUnits && (
-                    <div className="ml-7 mt-2 flex items-center gap-2">
-                      <label className="text-sm text-gray-700">Descuento si faltan o están mal:</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={localUnitPenalty}
-                        onChange={(e) => handleUnitPenaltyChange(e.target.value)}
-                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
-                      />
-                      <span className="text-sm text-gray-700">%</span>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>

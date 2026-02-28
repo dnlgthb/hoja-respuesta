@@ -6,6 +6,7 @@ export interface Teacher {
   id: string;
   email: string;
   name: string;
+  is_verified?: boolean;
   createdAt: string;
 }
 
@@ -49,6 +50,14 @@ export interface Test {
   writing_points?: number | null;
   rubricPdfUrl?: string | null;
   rubric_pdf_url?: string | null;
+  // Opciones de visualización
+  showOneAtATime?: boolean;
+  show_one_at_a_time?: boolean;
+  // Exigir unidades (nivel prueba)
+  requireUnits?: boolean;
+  require_units?: boolean;
+  unitPenalty?: number;
+  unit_penalty?: number;
 }
 
 export interface Question {
@@ -203,6 +212,11 @@ export interface UpdateTestRequest {
   evaluateWriting?: boolean;
   spellingPoints?: number | null;
   writingPoints?: number | null;
+  // Opciones de visualización
+  showOneAtATime?: boolean;
+  // Exigir unidades (nivel prueba)
+  requireUnits?: boolean;
+  unitPenalty?: number;
 }
 
 export interface UploadPDFResponse {
@@ -322,6 +336,7 @@ export interface TestAttemptsResponse {
     endsAt: string | null;
     timeRemainingSeconds: number | null;
     correctionCompletedAt: string | null;
+    accessCode?: string | null;
   };
   students: MonitorStudent[];
   summary: {

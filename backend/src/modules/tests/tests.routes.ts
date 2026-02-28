@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { testsController } from './tests.controller';
 import { authMiddleware } from '../auth/auth.middleware';
+import { requireActiveSubscription } from '../auth/subscription.middleware';
+import { checkPdfAnalysisLimit, checkAttemptsLimit } from '../auth/usage.middleware';
 import { upload, uploadImage } from '../../config/multer';
 
 const router = Router();
@@ -9,8 +11,8 @@ const router = Router();
 // Todas las rutas de tests requieren autenticación
 router.use(authMiddleware);
 
-// CRUD de pruebas
-router.post('/', (req, res) => testsController.createTest(req, res));
+// CRUD de pruebas (crear requiere suscripción, leer es libre)
+router.post('/', requireActiveSubscription, (req, res) => testsController.createTest(req, res));
 router.get('/', (req, res) => testsController.getTests(req, res));
 router.get('/:id', (req, res) => testsController.getTestById(req, res));
 router.put('/:id', (req, res) => testsController.updateTest(req, res));
@@ -23,16 +25,16 @@ router.put('/:id/questions/reorder', (req, res) => testsController.reorderQuesti
 router.put('/:id/questions/:questionId', (req, res) => testsController.updateQuestion(req, res));
 router.delete('/:id/questions/:questionId', (req, res) => testsController.deleteQuestion(req, res));
 
-// Upload y análisis de PDF
+// Upload y análisis de PDF (requiere suscripción + límite de análisis)
 router.post('/:id/upload-pdf', upload.single('pdf'), (req, res) => testsController.uploadPDF(req, res));
-router.post('/:id/analyze-pdf', upload.single('pdf'), (req, res) => testsController.analyzePDF(req, res));
-router.post('/:id/analyze-rubric', upload.single('pdf'), (req, res) => testsController.analyzeRubric(req, res));
+router.post('/:id/analyze-pdf', requireActiveSubscription, checkPdfAnalysisLimit, upload.single('pdf'), (req, res) => testsController.analyzePDF(req, res));
+router.post('/:id/analyze-rubric', requireActiveSubscription, checkPdfAnalysisLimit, upload.single('pdf'), (req, res) => testsController.analyzeRubric(req, res));
 
 // Upload de imagen para pregunta
 router.post('/:id/upload-image', uploadImage.single('image'), (req, res) => testsController.uploadQuestionImage(req, res));
 
-// Activar prueba (generar código)
-router.post('/:id/activate', (req, res) => testsController.activateTest(req, res));
+// Activar prueba (requiere suscripción + límite de intentos)
+router.post('/:id/activate', requireActiveSubscription, checkAttemptsLimit, (req, res) => testsController.activateTest(req, res));
 
 // Cerrar prueba
 router.post('/:id/close', (req, res) => testsController.closeTest(req, res));

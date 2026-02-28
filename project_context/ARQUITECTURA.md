@@ -15,15 +15,19 @@ hoja-respuesta/
 │   │   ├── config/
 │   │   │   ├── database.ts      # Prisma client
 │   │   │   ├── env.ts           # Validación env vars
+│   │   │   ├── email.ts         # Resend client + email templates
+│   │   │   ├── flow.ts          # Flow payment gateway (HMAC-SHA256)
 │   │   │   ├── multer.ts        # Upload config (10MB, solo PDF)
 │   │   │   ├── openai.ts        # Cliente OpenAI
 │   │   │   └── storage.ts       # Cliente Supabase Storage
 │   │   ├── modules/
-│   │   │   ├── auth/            # Autenticación profesor
+│   │   │   ├── auth/            # Autenticación + middlewares
 │   │   │   │   ├── auth.routes.ts
 │   │   │   │   ├── auth.controller.ts
 │   │   │   │   ├── auth.service.ts
-│   │   │   │   └── auth.middleware.ts
+│   │   │   │   ├── auth.middleware.ts          # JWT verification
+│   │   │   │   ├── subscription.middleware.ts  # Gate: require active subscription
+│   │   │   │   └── usage.middleware.ts         # Limits: PDF/attempts tracking + blocking
 │   │   │   ├── tests/           # CRUD pruebas + preguntas + monitoreo
 │   │   │   │   ├── tests.routes.ts
 │   │   │   │   ├── tests.controller.ts
@@ -32,6 +36,10 @@ hoja-respuesta/
 │   │   │   │   ├── courses.routes.ts
 │   │   │   │   ├── courses.controller.ts
 │   │   │   │   └── courses.service.ts
+│   │   │   ├── payments/        # Suscripciones + Flow
+│   │   │   │   ├── payments.routes.ts
+│   │   │   │   ├── payments.controller.ts
+│   │   │   │   └── payments.service.ts
 │   │   │   └── student/         # Endpoints públicos estudiantes
 │   │   │       ├── student.routes.ts
 │   │   │       ├── student.controller.ts
@@ -41,6 +49,8 @@ hoja-respuesta/
 │   │       ├── gradeCalculator.ts # Cálculo nota chilena
 │   │       ├── mathPostProcess.ts # Fix LaTeX escapes, repair broken, Unicode→LaTeX
 │   │       └── pdfExtractor.ts  # Convierte PDF a base64 para Vision API
+│   ├── scripts/
+│   │   └── manage-institution.ts  # Admin CLI para instituciones
 │   └── prisma/
 │       └── schema.prisma        # Modelos BD
 │
@@ -50,12 +60,17 @@ hoja-respuesta/
 │       │   ├── layout.tsx
 │       │   ├── page.tsx         # Home
 │       │   ├── login/page.tsx   # Auth
+│       │   ├── forgot-password/page.tsx   # Recuperar contraseña
+│       │   ├── reset-password/page.tsx    # Nueva contraseña con token
+│       │   ├── verify-email/page.tsx      # Verificación email
 │       │   ├── dashboard/page.tsx
+│       │   ├── planes/page.tsx            # Suscripción + uso
 │       │   ├── tests/
 │       │   │   ├── new/page.tsx           # Crear + upload + análisis IA
 │       │   │   └── [id]/
 │       │   │       ├── page.tsx           # Editor preguntas
 │       │   │       ├── activate/page.tsx  # Código QR
+│       │   │       ├── results/page.tsx   # Dashboard resultados
 │       │   │       └── monitor/page.tsx   # Monitoreo estudiantes
 │       │   ├── cursos/
 │       │   │   ├── page.tsx               # Lista cursos
@@ -68,6 +83,7 @@ hoja-respuesta/
 │       ├── components/
 │       │   ├── Navbar.tsx
 │       │   ├── ProtectedRoute.tsx
+│       │   ├── SubscriptionBanner.tsx  # Banner suscripción en dashboard
 │       │   ├── QuestionEditor.tsx  # Editor preguntas (TipTap unified editor)
 │       │   ├── TestCard.tsx
 │       │   ├── MathField.tsx      # Editor interactivo MathLive (LaTeX)
@@ -95,13 +111,18 @@ hoja-respuesta/
 
 | Modelo | Campos clave | Relaciones |
 |--------|--------------|------------|
-| **Teacher** | id, email (unique), password_hash, name | → tests[], courses[] |
+| **Teacher** | id, email (unique), password_hash, name, is_verified, is_beta, institution_id? | → tests[], courses[], institution?, subscription?, usage_counters[] |
 | **Course** | id, teacher_id, name, year | → teacher, students[], tests[] |
 | **CourseStudent** | id, course_id, student_name, student_email? | → course, student_attempts[] |
 | **Test** | id, teacher_id, course_id?, title, status, access_code, pdf_url, rubric_pdf_url | → teacher, course?, questions[], student_attempts[] |
-| **Question** | id, test_id, question_number, question_label?, type, question_text, points, options, correct_answer, correction_criteria, context?, has_image, image_description?, image_page?, **image_url?** | → test, answers[] |
+| **Question** | id, test_id, question_number, question_label?, type, question_text, points, options, correct_answer, correction_criteria, context?, has_image, image_description?, image_page?, image_url? | → test, answers[] |
 | **StudentAttempt** | id, test_id, course_student_id?, student_name, student_email?, device_token, results_token, status, is_unlocked | → test, course_student?, answers[] |
 | **Answer** | id, student_attempt_id, question_id, answer_value, points_earned, ai_feedback | → student_attempt, question |
+| **Institution** | id, name, contact_email, contact_name, plan_price, max_teachers? | → teachers[], subscription[] |
+| **InstitutionSubscription** | id, institution_id, status, period_start, period_end | → institution |
+| **Subscription** | id, teacher_id (unique), flow_subscription_id?, status, price, period_start, period_end, grace_period_end? | → teacher, payments[] |
+| **Payment** | id, subscription_id, flow_payment_id?, amount, status, payment_date | → subscription |
+| **UsageCounter** | id, teacher_id, period_start, student_attempts, pdf_analyses | → teacher (@@unique: teacher_id+period_start) |
 
 ### Enums
 
@@ -110,6 +131,9 @@ hoja-respuesta/
 | TestStatus | `DRAFT` → `ACTIVE` → `CLOSED` |
 | QuestionType | `TRUE_FALSE`, `MULTIPLE_CHOICE`, `DEVELOPMENT`, `MATH` |
 | AttemptStatus | `IN_PROGRESS`, `SUBMITTED` |
+| SubscriptionStatus | `ACTIVE`, `GRACE_PERIOD`, `SUSPENDED`, `CANCELLED` |
+| PlanType | `PERSONAL_MONTHLY` |
+| PaymentStatus | `PENDING`, `COMPLETED`, `FAILED`, `REFUNDED` |
 
 ---
 
@@ -119,15 +143,33 @@ hoja-respuesta/
 
 | Método | Ruta | Auth | Descripción |
 |--------|------|------|-------------|
-| POST | `/register` | No | Crear cuenta profesor |
-| POST | `/login` | No | Login → JWT |
+| POST | `/register` | No | Crear cuenta profesor (envía email verificación) |
+| POST | `/login` | No | Login → JWT (rate limited: 5/15min) |
 | GET | `/me` | JWT | Datos profesor actual |
+| POST | `/forgot-password` | No | Enviar email de recuperación |
+| POST | `/reset-password` | No | Cambiar contraseña con token |
+| PUT | `/change-password` | JWT | Cambiar contraseña (requiere actual) |
+| GET | `/verify-email` | No | Verificar email con token |
+| POST | `/resend-verification` | JWT | Reenviar email de verificación |
+
+### Payments (`/api/payments`)
+
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/subscription` | JWT | Estado suscripción + uso mensual |
+| POST | `/create-subscription` | JWT | Crear pago en Flow → retorna URL redirect |
+| POST | `/webhook` | No (firma Flow) | Callback de Flow (actualiza subscription) |
+| POST | `/cancel` | JWT | Cancelar suscripción |
 
 ### Tests (`/api/tests`) - Todos requieren JWT
 
+**Middleware de suscripción** aplicado a: POST `/`, POST `/:id/activate`, POST `/:id/analyze-pdf`, POST `/:id/analyze-rubric`
+**Middleware de uso** aplicado a: analyze-pdf (checkPdfLimit), analyze-rubric (checkPdfLimit), activate (checkAttemptsLimit)
+**Beta bypass**: `is_beta: true` salta verificación de suscripción y límites (pero se trackea uso)
+
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | `/` | Crear prueba (status: DRAFT) |
+| POST | `/` | Crear prueba (status: DRAFT) — requiere suscripción |
 | GET | `/` | Listar pruebas del profesor |
 | GET | `/:id` | Detalle prueba + preguntas |
 | PUT | `/:id` | Actualizar prueba |
@@ -183,7 +225,8 @@ hoja-respuesta/
 | **Supabase Storage** | PDFs + imágenes de preguntas (bucket: `test-pdfs`) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
 | **Mathpix** | OCR especializado en matemáticas (Phase 1: PDF → .mmd con LaTeX perfecto) | `MATHPIX_APP_ID`, `MATHPIX_APP_KEY` |
 | **OpenAI** | Identificación de preguntas (tipo/número/sección), análisis pauta → respuestas, extracción estudiantes de Excel/CSV, corrección desarrollo/math | `OPENAI_API_KEY`, modelo: `gpt-4o-mini` |
-| **Resend** | Emails (pendiente implementar) | `RESEND_API_KEY` |
+| **Resend** | Emails: resultados, verificación, reset contraseña | `RESEND_API_KEY` |
+| **Flow** | Pasarela de pago chilena (Webpay) — suscripciones mensuales | `FLOW_API_KEY`, `FLOW_SECRET_KEY`, `FLOW_API_URL` |
 | **Vercel** | Hosting frontend | Root Directory: `frontend`, Framework: Next.js |
 | **Railway** | Hosting backend | Root Directory: `backend`, dominio público generado |
 
@@ -237,6 +280,38 @@ hoja-respuesta/
 8. Profesor revisa/edita y confirma → `PUT /api/tests/:id/questions/batch`
 9. Preguntas se actualizan en batch
 
+### Flujo: Suscripción y Pagos
+
+```
+1. Profesor sin suscripción → SubscriptionBanner en dashboard: "Ver planes"
+2. /planes → click "Suscribirse" → POST /api/payments/create-subscription
+3. Backend crea orden en Flow → retorna URL de redirect
+4. Profesor va a Flow (checkout hosted) → paga con Webpay
+5. Flow redirige a /dashboard?payment=pending
+6. Flow envía webhook POST /api/payments/webhook con token
+7. Backend consulta estado en Flow → si pagado: Subscription → ACTIVE
+8. Renovación: Flow cobra automáticamente cada mes
+9. Si falla pago: ACTIVE → GRACE_PERIOD (1 día) → SUSPENDED
+10. Si paga después: webhook → ACTIVE automáticamente
+```
+
+### Flujo: Middleware de Suscripción
+
+```
+Cada request a endpoint protegido:
+  1. authMiddleware → verifica JWT → req.teacherId
+  2. requireActiveSubscription:
+     - is_beta? → bypass total
+     - institution_id? → check InstitutionSubscription ACTIVE/GRACE
+     - personal? → check Subscription + auto-transition por fechas
+     - sin suscripción → 403 subscription_required
+  3. checkLimit (si aplica):
+     - Beta? → bypass
+     - UsageCounter >= limit → 403
+  4. handler ejecuta la operación
+  5. trackUsage (post-éxito, fire-and-forget, TODOS los usuarios incl. beta)
+```
+
 ### Flujo: Autenticación
 
 ```
@@ -282,11 +357,17 @@ DATABASE_URL=postgresql://...
 JWT_SECRET=...
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
+OPENAI_VISION_MODEL=gpt-4o      # Para análisis de pauta PDF
 MATHPIX_APP_ID=...              # OCR matemático (opcional, fallback: GPT-4o Vision)
 MATHPIX_APP_KEY=...
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_ANON_KEY=...
 RESEND_API_KEY=re_...
+FLOW_API_KEY=...                # Pasarela de pago Flow
+FLOW_SECRET_KEY=...
+FLOW_API_URL=https://sandbox.flow.cl/api   # sandbox.flow.cl o www.flow.cl
+FLOW_RETURN_URL=https://aproba.ai/dashboard
+FLOW_WEBHOOK_URL=https://[backend]/api/payments/webhook
 PORT=3001
 ```
 

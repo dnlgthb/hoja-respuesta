@@ -8,6 +8,7 @@ import authRoutes from './modules/auth/auth.routes';
 import testsRoutes from './modules/tests/tests.routes';
 import studentRoutes from './modules/student/student.routes';
 import coursesRoutes from './modules/courses/courses.routes';
+import paymentsRoutes from './modules/payments/payments.routes';
 
 const app: Application = express();
 
@@ -56,6 +57,9 @@ app.use('/api/courses', coursesRoutes);
 
 // Rutas de estudiantes (públicas)
 app.use('/api/student', studentRoutes);
+
+// Rutas de pagos (webhook público, resto con JWT)
+app.use('/api/payments', paymentsRoutes);
 
 // ============================================
 // MANEJO DE ERRORES 404

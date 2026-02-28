@@ -11,6 +11,10 @@ export const ROUTES = {
   COURSES: '/cursos',
   NEW_COURSE: '/cursos/nuevo',
   COURSE_DETAIL: (id: string) => `/cursos/${id}`,
+  FORGOT_PASSWORD: '/forgot-password',
+  RESET_PASSWORD: '/reset-password',
+  VERIFY_EMAIL: '/verify-email',
+  PLANES: '/planes',
 };
 
 export const STORAGE_KEYS = {

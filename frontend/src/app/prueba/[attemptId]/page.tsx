@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { studentAPI } from '@/lib/api';
 import {
   FileText, User, CheckCircle, Circle, ChevronDown, ChevronUp,
-  Save, Loader2, AlertCircle, Send, X, Timer, Clock, Mail
+  Save, Loader2, AlertCircle, Send, X, Timer, Clock, Mail,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import MathField from '@/components/MathField';
 import RichMathText from '@/components/RichMathText';
@@ -55,6 +56,7 @@ interface AttemptData {
     endsAt: string | null;
     timeRemainingSeconds: number | null;
     requireFalseJustification?: boolean;
+    showOneAtATime?: boolean;
     questions: Question[];
   };
 }
@@ -79,6 +81,9 @@ export default function PruebaAttemptPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // One-at-a-time navigation
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
@@ -451,6 +456,16 @@ export default function PruebaAttemptPage() {
   // RENDER - Prueba en progreso
   // ============================================
 
+  const pdfUrl = attemptData.test.pdfUrl;
+  const compact = true; // Always compact + discrete to prevent peeking
+  const oneAtATime = attemptData.test.showOneAtATime;
+  const allQuestions = attemptData.test.questions;
+
+  // Questions to render (filtered for one-at-a-time)
+  const visibleQuestions = oneAtATime
+    ? [allQuestions[currentQuestionIndex]].filter(Boolean)
+    : allQuestions;
+
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Header fijo */}
@@ -494,45 +509,43 @@ export default function PruebaAttemptPage() {
 
       {/* Contenido principal */}
       <div className="flex-1 flex flex-col lg:flex-row min-h-0">
-        {/* PDF - Desktop: lado izquierdo, Mobile: colapsable */}
-        <div className="lg:w-1/2 lg:h-full flex-shrink-0">
-          {/* Toggle móvil */}
-          <button
-            onClick={() => setShowPdfMobile(!showPdfMobile)}
-            className="lg:hidden w-full bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between text-gray-700"
-          >
-            <span className="font-medium">Ver PDF de la prueba</span>
-            {showPdfMobile ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
+        {/* PDF - Desktop: lado izquierdo, Mobile: colapsable (hidden when no PDF) */}
+        {pdfUrl && (
+          <div className="lg:w-1/2 lg:h-full flex-shrink-0">
+            {/* Toggle móvil */}
+            <button
+              onClick={() => setShowPdfMobile(!showPdfMobile)}
+              className="lg:hidden w-full bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between text-gray-700"
+            >
+              <span className="font-medium">Ver PDF de la prueba</span>
+              {showPdfMobile ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </button>
 
-          {/* Visor PDF */}
-          <div className={`${showPdfMobile ? 'block' : 'hidden'} lg:block h-[50vh] lg:h-full bg-gray-800`}>
-            {attemptData.test.pdfUrl ? (
+            {/* Visor PDF */}
+            <div className={`${showPdfMobile ? 'block' : 'hidden'} lg:block h-[50vh] lg:h-full bg-gray-800`}>
               <iframe
-                src={attemptData.test.pdfUrl}
+                src={pdfUrl}
                 className="w-full h-full"
                 title="PDF de la prueba"
               />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                <p>PDF no disponible</p>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Formulario de respuestas - Desktop: lado derecho con scroll, Mobile: abajo */}
-        <div className="flex-1 lg:w-1/2 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${pdfUrl ? 'lg:w-1/2' : ''}`}>
           <div className="p-4 sm:p-6 space-y-6">
-            {attemptData.test.questions.map((question, idx) => {
-              const prevSection = idx > 0 ? attemptData.test.questions[idx - 1].context : null;
+            {visibleQuestions.map((question, idx) => {
+              // For one-at-a-time, use real index for section logic
+              const realIdx = oneAtATime ? currentQuestionIndex : idx;
+              const prevSection = realIdx > 0 ? allQuestions[realIdx - 1]?.context : null;
               const currentSection = question.context;
-              const showSectionHeader = currentSection && currentSection !== prevSection;
+              const showSectionHeader = !oneAtATime && currentSection && currentSection !== prevSection;
 
               return (
                 <div key={question.id}>
                   {showSectionHeader && (
-                    <div className={`flex items-center gap-3 ${idx > 0 ? 'mt-4' : ''} mb-2`}>
+                    <div className={`flex items-center gap-3 ${realIdx > 0 ? 'mt-4' : ''} mb-2`}>
                       <div className="h-px flex-1 bg-gray-300" />
                       <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
                         {currentSection}
@@ -549,10 +562,63 @@ export default function PruebaAttemptPage() {
                     requireFalseJustification={attemptData.test.requireFalseJustification}
                     onPasteAttempt={handlePasteAttempt}
                     disabled={isSubmitted}
+                    compact={compact}
                   />
                 </div>
               );
             })}
+
+            {/* Navegación una-a-una */}
+            {oneAtATime && !isSubmitted && (
+              <div className="flex flex-col items-center gap-4">
+                {/* Botones anterior/siguiente */}
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
+                    disabled={currentQuestionIndex === 0}
+                    className="flex items-center gap-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Anterior
+                  </button>
+                  <span className="text-sm text-gray-600 font-medium">
+                    Pregunta {currentQuestionIndex + 1} de {totalQuestions}
+                  </span>
+                  <button
+                    onClick={() => setCurrentQuestionIndex(prev => Math.min(totalQuestions - 1, prev + 1))}
+                    disabled={currentQuestionIndex === totalQuestions - 1}
+                    className="flex items-center gap-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Dots de progreso */}
+                <div className="flex gap-1.5 flex-wrap justify-center max-w-sm">
+                  {allQuestions.map((q, i) => {
+                    const isAnswered = answers[q.id] && answers[q.id].trim() !== '';
+                    const isCurrent = i === currentQuestionIndex;
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => setCurrentQuestionIndex(i)}
+                        className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center transition-all ${
+                          isCurrent
+                            ? 'bg-gray-800 text-white scale-110'
+                            : isAnswered
+                              ? 'bg-gray-300 text-gray-700'
+                              : 'bg-white border border-gray-300 text-gray-400'
+                        }`}
+                        title={`Pregunta ${q.questionLabel || q.questionNumber}`}
+                      >
+                        {q.questionLabel || q.questionNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Botón entregar */}
             {!isSubmitted && (
@@ -729,9 +795,10 @@ interface QuestionCardProps {
   requireFalseJustification?: boolean;
   onPasteAttempt?: () => void;
   disabled?: boolean;
+  compact?: boolean;
 }
 
-function QuestionCard({ question, value, onChange, justification, onJustificationChange, requireFalseJustification, onPasteAttempt, disabled }: QuestionCardProps) {
+function QuestionCard({ question, value, onChange, justification, onJustificationChange, requireFalseJustification, onPasteAttempt, disabled, compact }: QuestionCardProps) {
   const isAnswered = value && value.trim() !== '';
   const hasText = !!(question.questionText && question.questionText.trim());
 
@@ -796,6 +863,7 @@ function QuestionCard({ question, value, onChange, justification, onJustificatio
             onJustificationChange={onJustificationChange}
             requireJustification={requireFalseJustification}
             onPasteAttempt={onPasteAttempt}
+            compact={compact}
           />
         )}
         {question.type === 'MULTIPLE_CHOICE' && (
@@ -804,10 +872,11 @@ function QuestionCard({ question, value, onChange, justification, onJustificatio
             value={value}
             onChange={onChange}
             disabled={disabled}
+            compact={compact}
           />
         )}
         {question.type === 'DEVELOPMENT' && (
-          <DevelopmentInput value={value} onChange={onChange} disabled={disabled} onPasteAttempt={onPasteAttempt} />
+          <DevelopmentInput value={value} onChange={onChange} disabled={disabled} onPasteAttempt={onPasteAttempt} compact={compact} />
         )}
         {question.type === 'MATH' && (
           <MathInput value={value} onChange={onChange} disabled={disabled} onPasteAttempt={onPasteAttempt} />
@@ -835,7 +904,7 @@ interface TrueFalseInputProps extends InputProps {
 }
 
 // Verdadero / Falso
-function TrueFalseInput({ value, onChange, disabled, justification, onJustificationChange, requireJustification, onPasteAttempt }: TrueFalseInputProps) {
+function TrueFalseInput({ value, onChange, disabled, justification, onJustificationChange, requireJustification, onPasteAttempt, compact }: TrueFalseInputProps & { compact?: boolean }) {
   const showJustificationField = requireJustification && value === 'F';
 
   // Handler para paste en justificación
@@ -860,10 +929,10 @@ function TrueFalseInput({ value, onChange, disabled, justification, onJustificat
           type="button"
           onClick={() => !disabled && onChange('V')}
           disabled={disabled}
-          className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
+          className={`flex-1 py-2 px-3 rounded-lg border font-medium text-sm transition-all ${
             value === 'V'
-              ? 'border-blue-500 bg-blue-50 text-blue-700'
-              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              ? 'border-gray-400 bg-gray-50 text-gray-800'
+              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
           } ${disabled ? 'cursor-not-allowed' : ''}`}
         >
           Verdadero
@@ -872,10 +941,10 @@ function TrueFalseInput({ value, onChange, disabled, justification, onJustificat
           type="button"
           onClick={() => !disabled && onChange('F')}
           disabled={disabled}
-          className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
+          className={`flex-1 py-2 px-3 rounded-lg border font-medium text-sm transition-all ${
             value === 'F'
-              ? 'border-blue-500 bg-blue-50 text-blue-700'
-              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              ? 'border-gray-400 bg-gray-50 text-gray-800'
+              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
           } ${disabled ? 'cursor-not-allowed' : ''}`}
         >
           Falso
@@ -913,7 +982,7 @@ interface MultipleChoiceInputProps extends InputProps {
   options: string[];
 }
 
-function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleChoiceInputProps) {
+function MultipleChoiceInput({ options, value, onChange, disabled, compact }: MultipleChoiceInputProps & { compact?: boolean }) {
   const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
   // Compact "bubble sheet" mode: options are just letters (e.g. ["A","B","C","D"])
   const isLetterOnly = options.every(opt => /^[A-H]$/.test(opt.trim()));
@@ -930,10 +999,10 @@ function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleCho
               type="button"
               onClick={() => !disabled && onChange(letter)}
               disabled={disabled}
-              className={`w-12 h-12 rounded-full border-2 transition-all flex items-center justify-center text-base font-bold ${
+              className={`w-9 h-9 rounded-full border transition-all flex items-center justify-center text-sm font-semibold ${
                 isSelected
-                  ? 'border-primary bg-primary text-white shadow-md scale-110'
-                  : 'border-gray-300 bg-white text-gray-600 hover:border-primary/50 hover:bg-primary/5'
+                  ? 'border-gray-400 bg-gray-100 text-gray-800'
+                  : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400 hover:bg-gray-50'
               } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
             >
               {letter}
@@ -956,17 +1025,17 @@ function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleCho
             type="button"
             onClick={() => !disabled && onChange(letter)}
             disabled={disabled}
-            className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all flex items-start gap-3 ${
+            className={`w-full text-left py-2 px-3 rounded-lg border transition-all flex items-start gap-2 text-sm ${
               isSelected
-                ? 'border-primary bg-primary/5 text-gray-900'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                ? 'border-gray-400 bg-gray-50 text-gray-800'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             } ${disabled ? 'cursor-not-allowed' : ''}`}
           >
             <span
-              className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${
+              className={`flex-shrink-0 w-5 h-5 text-xs rounded-full flex items-center justify-center font-semibold ${
                 isSelected
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-100 text-gray-600'
+                  ? 'bg-gray-400 text-white'
+                  : 'bg-gray-100 text-gray-500'
               }`}
             >
               {letter}
@@ -982,7 +1051,7 @@ function MultipleChoiceInput({ options, value, onChange, disabled }: MultipleCho
 }
 
 // Desarrollo
-function DevelopmentInput({ value, onChange, disabled, onPasteAttempt }: InputProps) {
+function DevelopmentInput({ value, onChange, disabled, onPasteAttempt, compact }: InputProps & { compact?: boolean }) {
   // Handler para paste externo
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pastedText = e.clipboardData.getData('text');
@@ -1004,7 +1073,7 @@ function DevelopmentInput({ value, onChange, disabled, onPasteAttempt }: InputPr
       onChange={(e) => onChange(e.target.value)}
       onPaste={handlePaste}
       placeholder="Escribe tu respuesta..."
-      rows={4}
+      rows={3}
       disabled={disabled}
       className={`w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y text-gray-900 ${
         disabled ? 'bg-gray-50 cursor-not-allowed' : ''

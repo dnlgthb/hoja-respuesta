@@ -225,6 +225,15 @@ export class CorrectionService {
    * Se ejecuta después de la corrección automática
    */
   async correctAIQuestions(testId: string): Promise<{ corrected: number; total: number }> {
+    // Obtener configuración de unidades del test
+    const test = await prisma.test.findUnique({
+      where: { id: testId },
+      select: {
+        require_units: true,
+        unit_penalty: true,
+      },
+    });
+
     // Obtener todas las preguntas de la prueba que requieren IA
     const questions = await prisma.question.findMany({
       where: {
@@ -295,15 +304,19 @@ export class CorrectionService {
         let result: { pointsEarned: number; feedback: string };
 
         // Usar corrección específica para MATH con unidades si está habilitado
-        if (question.type === QuestionType.MATH && question.require_units) {
+        // Check test-level require_units first, fallback to question-level for backward compat
+        const requireUnits = test?.require_units ?? question.require_units;
+        const unitPenalty = test?.require_units ? (test.unit_penalty ?? 0.5) : question.unit_penalty;
+
+        if (question.type === QuestionType.MATH && requireUnits) {
           console.log(`      🤖 Llamando a correctMathWithUnits...`);
           result = await correctMathWithUnits({
             questionText: question.question_text,
             correctionCriteria: question.correction_criteria || '',
             maxPoints: Number(question.points),
             studentAnswer: answer.answer_value,
-            requireUnits: question.require_units,
-            unitPenalty: question.unit_penalty,
+            requireUnits: requireUnits,
+            unitPenalty: unitPenalty,
           });
         } else {
           console.log(`      🤖 Llamando a correctWithAI...`);

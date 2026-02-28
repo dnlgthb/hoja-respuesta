@@ -15,17 +15,27 @@ datasource db {
 // MODELO: PROFESORES
 // ============================================
 model Teacher {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  password_hash String
-  name          String
-  created_at    DateTime @default(now())
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  password_hash      String
+  name               String
+  is_verified        Boolean   @default(false)
+  verification_token String?   @unique
+  reset_token        String?   @unique
+  reset_token_exp    DateTime?
+  is_beta            Boolean   @default(false)
+  institution_id     String?
+  created_at         DateTime  @default(now())
 
   // Relaciones
-  tests         Test[]
-  courses       Course[]
+  tests          Test[]
+  courses        Course[]
+  institution    Institution?    @relation(fields: [institution_id], references: [id])
+  subscription   Subscription?
+  usage_counters UsageCounter[]
 
   @@map("teachers")
+  @@index([institution_id])
 }
 
 // ============================================
@@ -93,6 +103,11 @@ model Test {
   spelling_points             Float?                  // Puntaje asignado a ortografía
   writing_points              Float?                  // Puntaje asignado a redacción
   rubric_pdf_url              String?                 // URL del PDF de pauta de corrección
+  // Opciones de visualización
+  show_one_at_a_time          Boolean @default(false) // Mostrar preguntas una a una
+  // Exigir unidades (nivel prueba)
+  require_units               Boolean @default(false) // Exigir unidades en respuestas MATH
+  unit_penalty                Float   @default(0.5)   // Porcentaje de descuento (0.5 = 50%)
 
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
@@ -218,4 +233,125 @@ model Answer {
   @@index([student_attempt_id])
   @@index([question_id])
   @@unique([student_attempt_id, question_id])  // Una respuesta por pregunta por intento
+}
+
+// ============================================
+// MODELO: INSTITUCIONES (Colegios)
+// ============================================
+model Institution {
+  id            String   @id @default(cuid())
+  name          String
+  contact_email String?
+  contact_name  String?
+  plan_price    Decimal? @db.Decimal(10, 2) // Precio mensual convenio
+  max_teachers  Int      @default(10)       // Máximo de profesores
+  notes         String?  @db.Text
+  created_at    DateTime @default(now())
+
+  // Relaciones
+  teachers     Teacher[]
+  subscription InstitutionSubscription?
+
+  @@map("institutions")
+}
+
+// ============================================
+// MODELO: SUSCRIPCIÓN INSTITUCIONAL
+// ============================================
+model InstitutionSubscription {
+  id             String             @id @default(cuid())
+  institution_id String             @unique
+  status         SubscriptionStatus @default(ACTIVE)
+  period_start   DateTime
+  period_end     DateTime
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+
+  // Relaciones
+  institution Institution @relation(fields: [institution_id], references: [id], onDelete: Cascade)
+
+  @@map("institution_subscriptions")
+}
+
+// ============================================
+// MODELO: SUSCRIPCIÓN PERSONAL (Flow)
+// ============================================
+model Subscription {
+  id                   String             @id @default(cuid())
+  teacher_id           String             @unique
+  plan_type            PlanType           @default(PERSONAL_MONTHLY)
+  flow_subscription_id String?            // ID de suscripción en Flow
+  status               SubscriptionStatus @default(ACTIVE)
+  price                Decimal            @db.Decimal(10, 2)
+  period_start         DateTime
+  period_end           DateTime
+  grace_period_end     DateTime?          // Gracia después de fallo de pago
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
+
+  // Relaciones
+  teacher  Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+// ============================================
+// MODELO: PAGOS
+// ============================================
+model Payment {
+  id              String        @id @default(cuid())
+  subscription_id String
+  flow_payment_id String?       // ID de pago en Flow
+  amount          Decimal       @db.Decimal(10, 2)
+  status          PaymentStatus @default(PENDING)
+  payment_date    DateTime?
+  created_at      DateTime      @default(now())
+
+  // Relaciones
+  subscription Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+  @@index([subscription_id])
+}
+
+// ============================================
+// MODELO: CONTADORES DE USO MENSUAL
+// ============================================
+model UsageCounter {
+  id               String   @id @default(cuid())
+  teacher_id       String
+  period_start     DateTime // Primer día del mes
+  student_attempts Int      @default(0)
+  pdf_analyses     Int      @default(0)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Relaciones
+  teacher Teacher @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+
+  @@map("usage_counters")
+  @@unique([teacher_id, period_start])
+  @@index([teacher_id])
+}
+
+// ============================================
+// ENUMS: PAGOS Y SUSCRIPCIONES
+// ============================================
+enum PlanType {
+  PERSONAL_MONTHLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
 }

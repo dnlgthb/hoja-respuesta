@@ -2182,13 +2182,28 @@ REGLAS POR TIPO DE PREGUNTA:
 
 3. DEVELOPMENT:
    - "correct_answer" = null (no se usa para desarrollo)
-   - "correction_criteria" = COPIAR TEXTUALMENTE la respuesta/pauta COMPLETA que da el documento. NO resumir, NO parafrasear, NO escribir criterios de evaluación genéricos. Este texto será usado después por otra IA para corregir.
-   - COPIAR TODO el texto de la respuesta, incluyendo TODOS los párrafos, oraciones y puntos. NO detenerse en el primer punto aparte — seguir copiando hasta que empiece la siguiente pregunta.
-   - Si la respuesta tiene múltiples párrafos, oraciones separadas por punto, o viñetas → copiar TODO junto, separado por espacios o saltos de línea.
-   - EJEMPLO CORRECTO: Si la pauta dice "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
-     → correct_answer: null, correction_criteria: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo."
-   - EJEMPLO INCORRECTO: correction_criteria: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios genéricos.
-   - EJEMPLO INCORRECTO: Copiar solo la primera oración y omitir el resto ← ESTO ESTÁ MAL, copia TODO.
+   - "correction_criteria" = COPIAR TEXTUALMENTE TODO lo que la pauta dice sobre esta pregunta. Este texto será usado después por otra IA para corregir respuestas de estudiantes.
+
+   REGLA CLAVE: Copia ABSOLUTAMENTE TODO el contenido de la pauta para esa pregunta, desde el número de la pregunta hasta donde empiece la siguiente pregunta (o el fin del documento). Esto incluye:
+   - Respuesta esperada / respuesta modelo
+   - Rúbrica o criterios de evaluación (ej: "2 pts si menciona X, 1 pt si menciona Y")
+   - Ejemplos de respuestas correctas
+   - Indicadores de logro
+   - Notas para el corrector
+   - Puntaje parcial y sus condiciones
+   - Cualquier otro elemento que aparezca
+
+   NO te detengas en el primer punto aparte, el primer párrafo, o la primera oración. Sigue copiando hasta que empiece la SIGUIENTE PREGUNTA (identificada por un nuevo número de pregunta).
+
+   Si la pauta tiene múltiples elementos (respuesta + rúbrica + ejemplos), cópialos TODOS separados por saltos de línea.
+
+   EJEMPLO CORRECTO: Si la pauta dice:
+   "3. Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo.
+   Indicadores: 2 pts si define correctamente + da ejemplo. 1 pt si solo define."
+   → correction_criteria: "Reflexión de la luz: Es el fenómeno en el cual la luz rebota al chocar con una superficie. Ejemplo: Cuando nos vemos en un espejo.\nIndicadores: 2 pts si define correctamente + da ejemplo. 1 pt si solo define."
+
+   EJEMPLO INCORRECTO: correction_criteria: "La respuesta debe incluir la definición del fenómeno y un ejemplo claro." ← ESTO ESTÁ MAL, no inventes criterios genéricos.
+   EJEMPLO INCORRECTO: Copiar solo "Reflexión de la luz: Es el fenómeno..." y omitir los indicadores ← ESTO ESTÁ MAL, copia TODO.
 
 4. MATH:
    - "correct_answer" = null (no se usa para matemáticas)

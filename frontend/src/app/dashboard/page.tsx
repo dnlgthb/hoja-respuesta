@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
+import SubscriptionBanner from '@/components/SubscriptionBanner';
 import TestCard from '@/components/TestCard';
-import { testsAPI } from '@/lib/api';
+import { testsAPI, authAPI } from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
 import { Test } from '@/types';
-import { Plus } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { ROUTES } from '@/config/constants';
 
 export default function DashboardPage() {
@@ -15,10 +17,18 @@ export default function DashboardPage() {
   const [tests, setTests] = useState<Test[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(true);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   // Cargar pruebas al montar el componente
   useEffect(() => {
     loadTests();
+    // Check verification status
+    const user = getCurrentUser();
+    if (user && user.is_verified === false) {
+      setIsVerified(false);
+    }
   }, []);
 
   const loadTests = async () => {
@@ -58,10 +68,46 @@ export default function DashboardPage() {
     router.push(ROUTES.NEW_TEST);
   };
 
+  const handleResendVerification = async () => {
+    try {
+      setResendingVerification(true);
+      await authAPI.resendVerification();
+      setVerificationSent(true);
+    } catch {
+      // Silently fail
+    } finally {
+      setResendingVerification(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-[#FBF9F3]">
         <Navbar />
+        <SubscriptionBanner />
+
+        {/* Verification banner */}
+        {!isVerified && (
+          <div className="bg-amber-50 border-b border-amber-200">
+            <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <p className="text-sm text-amber-800 flex-1">
+                Tu email no está verificado. Revisa tu bandeja de entrada.
+              </p>
+              {verificationSent ? (
+                <span className="text-sm text-green-700 font-medium">Enviado</span>
+              ) : (
+                <button
+                  onClick={handleResendVerification}
+                  disabled={resendingVerification}
+                  className="text-sm text-amber-700 hover:text-amber-900 font-medium underline disabled:opacity-50"
+                >
+                  {resendingVerification ? 'Enviando...' : 'Reenviar email'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="max-w-7xl mx-auto px-6 py-8">
           {/* Header */}

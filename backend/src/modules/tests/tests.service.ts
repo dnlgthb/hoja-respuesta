@@ -25,6 +25,11 @@ export interface UpdateTestData {
   evaluateWriting?: boolean;
   spellingPoints?: number | null;
   writingPoints?: number | null;
+  // Opciones de visualización
+  showOneAtATime?: boolean;
+  // Exigir unidades (nivel prueba)
+  requireUnits?: boolean;
+  unitPenalty?: number;
 }
 
 export class TestsService {
@@ -263,6 +268,11 @@ export class TestsService {
         evaluate_writing: data.evaluateWriting,
         spelling_points: data.spellingPoints,
         writing_points: data.writingPoints,
+        // Opciones de visualización
+        show_one_at_a_time: data.showOneAtATime,
+        // Exigir unidades (nivel prueba)
+        require_units: data.requireUnits,
+        unit_penalty: data.unitPenalty,
       },
       include: {
         course: {
@@ -494,9 +504,16 @@ export class TestsService {
       throw new Error('La prueba debe tener al menos una pregunta para ser activada');
     }
 
-    // Verificar que tenga PDF subido
+    // Si no hay PDF, verificar que todas las preguntas tengan texto (modo manual)
     if (!test.pdf_url) {
-      throw new Error('La prueba debe tener un PDF subido para ser activada');
+      const questionsWithoutText = test.questions.filter(
+        (q) => !q.question_text || q.question_text.trim() === ''
+      );
+      if (questionsWithoutText.length > 0) {
+        throw new Error(
+          `Sin PDF, todas las preguntas deben tener enunciado. Falta texto en ${questionsWithoutText.length} pregunta(s).`
+        );
+      }
     }
 
     // Generar código único de 6 caracteres
@@ -1087,6 +1104,7 @@ export class TestsService {
         closedAt: test.closed_at,
         passingThreshold,
         correctionCompletedAt: test.correction_completed_at,
+        pdfUrl: test.pdf_url,
       },
       students: studentsWithScores,
       summary,

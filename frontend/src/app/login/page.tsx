@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { authAPI } from '@/lib/api';
 import { setToken, setCurrentUser } from '@/lib/auth';
 import { ROUTES } from '@/config/constants';
+import Link from 'next/link';
 import { LogIn, UserPlus, CheckCircle } from 'lucide-react';
 
 // ============================================
@@ -201,6 +202,15 @@ export default function LoginPage() {
                     {loginForm.formState.errors.password.message}
                   </p>
                 )}
+              </div>
+
+              <div className="flex justify-end">
+                <Link
+                  href={ROUTES.FORGOT_PASSWORD}
+                  className="text-sm text-[#6366f1] hover:text-[#4f46e5] transition-colors"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
               </div>
 
               <button

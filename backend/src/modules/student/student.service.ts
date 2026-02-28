@@ -1,5 +1,6 @@
 // Servicio de Estudiantes - Lógica de negocio
 import prisma from '../../config/database';
+import { trackAttemptUsage } from '../auth/usage.middleware';
 
 // Tipos
 export interface JoinTestData {
@@ -297,6 +298,9 @@ export class StudentService {
       },
     });
 
+    // Track usage for the test's teacher
+    trackAttemptUsage(test.teacher_id).catch(err => console.error('Error tracking attempt usage:', err));
+
     return this.formatJoinResponse(newAttempt.id, newDeviceToken, test);
   }
 
@@ -325,6 +329,7 @@ export class StudentService {
             activated_at: true,
             ends_at: true,
             require_false_justification: true,
+            show_one_at_a_time: true,
             questions: {
               orderBy: { question_number: 'asc' },
               select: {
@@ -368,6 +373,21 @@ export class StudentService {
       timeRemainingSeconds = Math.max(0, Math.floor((endsAt.getTime() - now.getTime()) / 1000));
     }
 
+    // Map questions
+    let questions = attempt.test.questions.map(q => ({
+      id: q.id,
+      questionNumber: q.question_number,
+      questionLabel: q.question_label || String(q.question_number),
+      type: q.type,
+      questionText: q.question_text,
+      context: q.context || null,
+      points: Number(q.points),
+      options: q.options,
+      imageUrl: q.image_url || null,
+      hasImage: q.has_image || false,
+      imageDescription: q.image_description || null,
+    }));
+
     return {
       id: attempt.id,
       studentName: attempt.student_name,
@@ -388,19 +408,8 @@ export class StudentService {
         endsAt: attempt.test.ends_at,
         timeRemainingSeconds,
         requireFalseJustification: attempt.test.require_false_justification,
-        questions: attempt.test.questions.map(q => ({
-          id: q.id,
-          questionNumber: q.question_number,
-          questionLabel: q.question_label || String(q.question_number),
-          type: q.type,
-          questionText: q.question_text,
-          context: q.context || null,
-          points: Number(q.points),
-          options: q.options,
-          imageUrl: q.image_url || null,
-          hasImage: q.has_image || false,
-          imageDescription: q.image_description || null,
-        })),
+        showOneAtATime: attempt.test.show_one_at_a_time,
+        questions,
       },
     };
   }
@@ -592,6 +601,7 @@ export class StudentService {
         endsAt: test.ends_at,
         timeRemainingSeconds,
         correctionCompletedAt: test.correction_completed_at,
+        accessCode: test.access_code,
       },
       students: studentsWithStatus,
       summary: {

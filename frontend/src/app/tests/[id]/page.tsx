@@ -46,6 +46,12 @@ export default function TestDetailPage() {
   const [writingPoints, setWritingPoints] = useState<string>('');
   const [hasUnsavedCorrectionOptions, setHasUnsavedCorrectionOptions] = useState(false);
 
+  // Display options
+  const [showOneAtATime, setShowOneAtATime] = useState(false);
+  // Unit options (test-level)
+  const [requireUnits, setRequireUnits] = useState(false);
+  const [unitPenalty, setUnitPenalty] = useState<string>('50');
+
   // Rubric (pauta de corrección)
   const [showRubricUploadModal, setShowRubricUploadModal] = useState(false);
   const [showRubricPreviewModal, setShowRubricPreviewModal] = useState(false);
@@ -91,6 +97,9 @@ export default function TestDetailPage() {
       setEvaluateWriting(data.evaluateWriting ?? data.evaluate_writing ?? false);
       setSpellingPoints(data.spellingPoints ?? data.spelling_points ? String(data.spellingPoints ?? data.spelling_points) : '');
       setWritingPoints(data.writingPoints ?? data.writing_points ? String(data.writingPoints ?? data.writing_points) : '');
+      setShowOneAtATime(data.showOneAtATime ?? data.show_one_at_a_time ?? false);
+      setRequireUnits(data.requireUnits ?? data.require_units ?? false);
+      setUnitPenalty(String((data.unitPenalty ?? data.unit_penalty ?? 0.5) * 100));
       setHasUnsavedCorrectionOptions(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar la prueba');
@@ -278,6 +287,9 @@ export default function TestDetailPage() {
         evaluateWriting,
         spellingPoints: evaluateSpelling && spellingPoints ? parseFloat(spellingPoints) : null,
         writingPoints: evaluateWriting && writingPoints ? parseFloat(writingPoints) : null,
+        showOneAtATime,
+        requireUnits,
+        unitPenalty: parseFloat(unitPenalty) / 100,
       });
 
       setHasUnsavedCorrectionOptions(false);
@@ -501,6 +513,7 @@ export default function TestDetailPage() {
 
   const isActive = (test.isActive ?? test.is_active) || (test as any).status === 'ACTIVE';
   const courseId = test.courseId || test.course_id;
+  const isManualMode = !test.pdfUrl && !test.pdf_url;
 
   return (
     <ProtectedRoute>
@@ -762,9 +775,71 @@ export default function TestDetailPage() {
 
                   {!questions.some(q => (q.questionType || q.type) === 'DEVELOPMENT') && (evaluateSpelling || evaluateWriting) && (
                     <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                      ⚠️ No hay preguntas de desarrollo en esta prueba. La evaluación de ortografía/redacción solo aplica a preguntas de desarrollo.
+                      No hay preguntas de desarrollo en esta prueba. La evaluación de ortografía/redacción solo aplica a preguntas de desarrollo.
                     </p>
                   )}
+                </div>
+
+                {/* Exigir unidades en MATH */}
+                {questions.some(q => (q.questionType || q.type) === 'MATH') && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={requireUnits}
+                        onChange={(e) => {
+                          setRequireUnits(e.target.checked);
+                          handleCorrectionOptionChange();
+                        }}
+                        className="mt-1 w-4 h-4 text-primary rounded focus:ring-primary"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">Exigir unidades en respuestas matemáticas</span>
+                        <p className="text-sm text-gray-500">La IA verificará si el estudiante incluye las unidades correctas</p>
+                      </div>
+                    </label>
+                    {requireUnits && (
+                      <div className="ml-7 mt-3 flex items-center gap-2">
+                        <label className="text-sm text-gray-700">Descuento si faltan o están mal:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={unitPenalty}
+                          onChange={(e) => {
+                            setUnitPenalty(e.target.value);
+                            handleCorrectionOptionChange();
+                          }}
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
+                        />
+                        <span className="text-sm text-gray-700">%</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Modalidad de visualización */}
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Modalidad de visualización</p>
+
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showOneAtATime}
+                        onChange={(e) => {
+                          setShowOneAtATime(e.target.checked);
+                          handleCorrectionOptionChange();
+                        }}
+                        className="mt-1 w-4 h-4 text-primary rounded focus:ring-primary"
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">Mostrar preguntas una a una</span>
+                        <p className="text-sm text-gray-500">Los estudiantes ven solo una pregunta a la vez</p>
+                      </div>
+                    </label>
+
+                  </div>
                 </div>
 
                 {/* Botón guardar opciones */}
@@ -827,6 +902,7 @@ export default function TestDetailPage() {
                     requireFalseJustification={requireFalseJustification}
                     isFirst={index === 0}
                     isLast={index === questions.length - 1}
+                    isManualMode={isManualMode}
                   />
                 </div>
               );

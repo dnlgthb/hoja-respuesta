@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { testsService } from './tests.service';
 import { studentService } from '../student/student.service';
+import { trackPdfAnalysis, trackAttemptUsage } from '../auth/usage.middleware';
 
 export class TestsController {
   
@@ -93,6 +94,11 @@ export class TestsController {
         evaluateWriting,
         spellingPoints,
         writingPoints,
+        // Opciones de visualización
+        showOneAtATime,
+        // Exigir unidades (nivel prueba)
+        requireUnits,
+        unitPenalty,
       } = req.body;
       const teacherId = req.teacherId!;
 
@@ -105,7 +111,12 @@ export class TestsController {
         spellingPoints !== undefined ||
         writingPoints !== undefined;
 
-      if (!title && courseId === undefined && !hasCorrectionOptions) {
+      const hasDisplayOptions =
+        showOneAtATime !== undefined ||
+        requireUnits !== undefined ||
+        unitPenalty !== undefined;
+
+      if (!title && courseId === undefined && !hasCorrectionOptions && !hasDisplayOptions) {
         res.status(400).json({ error: 'Debe proporcionar al menos un campo para actualizar' });
         return;
       }
@@ -119,6 +130,9 @@ export class TestsController {
         evaluateWriting,
         spellingPoints,
         writingPoints,
+        showOneAtATime,
+        requireUnits,
+        unitPenalty,
       });
 
       res.status(200).json(updatedTest);
@@ -226,6 +240,8 @@ export class TestsController {
       try {
         const result = await testsService.analyzePDF(id, teacherId, fileBuffer, onProgress);
         clearInterval(heartbeat);
+        // Track usage after successful analysis
+        trackPdfAnalysis(teacherId).catch(err => console.error('Error tracking PDF analysis:', err));
         res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
         res.end();
       } catch (innerError) {
@@ -248,7 +264,7 @@ export class TestsController {
       }
     }
   }
-  
+
   /**
    * POST /api/tests/:id/activate
    * Activar una prueba (generar código de acceso)
@@ -658,6 +674,8 @@ export class TestsController {
       };
 
       const result = await testsService.analyzeRubric(id, teacherId, fileBuffer, onProgress);
+      // Track usage after successful analysis
+      trackPdfAnalysis(teacherId).catch(err => console.error('Error tracking rubric analysis:', err));
       res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
       res.end();
 

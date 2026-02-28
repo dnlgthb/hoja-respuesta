@@ -15,6 +15,9 @@ import {
   UserX,
   StopCircle,
   Timer,
+  Link as LinkIcon,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import type { MonitorStudent, TestAttemptsResponse } from '@/types';
 
@@ -38,6 +41,9 @@ export default function MonitorPage() {
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Link copy state
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Close test state
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -391,6 +397,55 @@ export default function MonitorPage() {
             </div>
           </div>
         </div>
+
+        {/* Link de acceso — solo si la prueba está activa */}
+        {data.test.accessCode && (
+          <div className="bg-white rounded-lg shadow p-4 mb-6 flex items-center gap-4">
+            <LinkIcon className="w-5 h-5 text-gray-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-500 mb-1">Link para estudiantes</p>
+              <p className="text-sm font-mono text-gray-700 truncate">
+                {typeof window !== 'undefined'
+                  ? `${window.location.origin}/prueba?codigo=${data.test.accessCode}`
+                  : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-sm font-bold text-gray-900 bg-gray-100 px-3 py-1 rounded">
+                {data.test.accessCode}
+              </span>
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/prueba?codigo=${data.test.accessCode}`;
+                  navigator.clipboard.writeText(url);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2000);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                {copiedLink ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-green-600">Copiado</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copiar link</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => router.push(ROUTES.TEST_ACTIVATE(testId))}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                title="Ver página con código QR"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>QR</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tabla de estudiantes */}
         <div className="bg-white rounded-lg shadow overflow-hidden">

@@ -71,6 +71,25 @@ apiClient.interceptors.response.use(
       return Promise.reject(new Error('Sesión expirada. Por favor inicia sesión nuevamente.'));
     }
 
+    // Handle 403 Forbidden - subscription/usage limits
+    if (error.response?.status === 403) {
+      const data = error.response?.data as { error?: string; message?: string } | undefined;
+      const errorCode = data?.error;
+
+      if (errorCode === 'subscription_required') {
+        const message = data?.message || 'Necesitas una suscripción activa para usar esta función.';
+        return Promise.reject(new Error(message));
+      }
+      if (errorCode === 'subscription_suspended') {
+        const message = data?.message || 'Tu suscripción está suspendida.';
+        return Promise.reject(new Error(message));
+      }
+      if (errorCode === 'pdf_analysis_limit_reached' || errorCode === 'attempts_limit_reached') {
+        const message = data?.message || 'Has alcanzado el límite de uso mensual.';
+        return Promise.reject(new Error(message));
+      }
+    }
+
     // Handle other errors - backend usa 'error' no 'message'
     const data = error.response?.data as { error?: string; message?: string } | undefined;
     const message = data?.error || data?.message || 'Error en la solicitud';
@@ -95,6 +114,31 @@ export const authAPI = {
 
   me: async (): Promise<Teacher> => {
     const response = await apiClient.get<Teacher>('/api/auth/me');
+    return response.data;
+  },
+
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/api/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/api/auth/reset-password', { token, password });
+    return response.data;
+  },
+
+  verifyEmail: async (token: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/api/auth/verify-email', { token });
+    return response.data;
+  },
+
+  resendVerification: async (): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/api/auth/resend-verification');
+    return response.data;
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+    const response = await apiClient.put<{ message: string }>('/api/auth/change-password', { currentPassword, newPassword });
     return response.data;
   },
 };
@@ -124,6 +168,15 @@ async function streamingAnalysis<T>(
     // Try to parse error from JSON response
     try {
       const errorData = await response.json();
+      // Map specific 403 error codes to user-friendly messages
+      if (response.status === 403) {
+        if (errorData.error === 'subscription_required') {
+          throw new Error(errorData.message || 'Necesitas una suscripción activa para usar esta función.');
+        }
+        if (errorData.error === 'pdf_analysis_limit_reached') {
+          throw new Error(errorData.message || 'Has alcanzado el límite de análisis de PDF este mes.');
+        }
+      }
       throw new Error(errorData.error || errorData.message || 'Error en la solicitud');
     } catch (e) {
       if (e instanceof Error && e.message !== 'Error en la solicitud') throw e;
@@ -516,6 +569,40 @@ export const studentAPI = {
     } catch {
       // Silencioso - no mostrar errores
     }
+  },
+};
+
+// ============================================
+// PAYMENTS ENDPOINTS
+// ============================================
+
+export interface SubscriptionInfo {
+  hasSubscription: boolean;
+  status: string | null;
+  type: 'beta' | 'institutional' | 'personal' | 'none';
+  periodEnd: string | null;
+  gracePeriodEnd: string | null;
+  price: number | null;
+  usage: { studentAttempts: number; pdfAnalyses: number } | null;
+}
+
+export const paymentsAPI = {
+  // Obtener estado de suscripción
+  getSubscription: async (): Promise<SubscriptionInfo> => {
+    const response = await apiClient.get<SubscriptionInfo>('/api/payments/subscription');
+    return response.data;
+  },
+
+  // Crear suscripción (redirige a Flow)
+  createSubscription: async (): Promise<{ paymentUrl: string; token: string }> => {
+    const response = await apiClient.post<{ paymentUrl: string; token: string }>('/api/payments/create-subscription');
+    return response.data;
+  },
+
+  // Cancelar suscripción
+  cancelSubscription: async (): Promise<{ message: string; periodEnd: string | null }> => {
+    const response = await apiClient.post<{ message: string; periodEnd: string | null }>('/api/payments/cancel');
+    return response.data;
   },
 };
 

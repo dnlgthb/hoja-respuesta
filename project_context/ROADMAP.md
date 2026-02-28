@@ -23,6 +23,15 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 | 5 | Corrección y resultados | ✅ Completada |
 | 5.5 | Deploy (Vercel + Railway) | ✅ Completada |
 | 6 | Testing y ajustes | ⏳ Pendiente |
+| P1 | Modelo de datos pagos | ✅ Completada |
+| P2 | Seguridad de cuentas | ✅ Completada |
+| P3 | Instituciones (admin script) | ✅ Completada |
+| P4 | Middleware de suscripción | ✅ Completada |
+| P5 | Límites de uso | ✅ Completada |
+| P6 | Integración Flow | ✅ Completada |
+| P7 | Frontend de pagos | ✅ Completada |
+| P8 | Grace period y suspensión | ✅ Completada |
+| P9 | Testing pagos | ✅ Completada |
 
 ---
 
@@ -230,8 +239,74 @@ Plataforma web que transforma pruebas existentes (Word/PDF) en hojas de respuest
 
 ---
 
+---
+
+## Sistema de Pagos y Suscripciones (Fases P1-P9) ✅
+
+### P1: Modelo de Datos ✅
+- [x] Nuevas tablas: Institution, InstitutionSubscription, Subscription, Payment, UsageCounter
+- [x] Nuevos enums: SubscriptionStatus, PlanType, PaymentStatus
+- [x] Campos en Teacher: is_beta, institution_id
+- [x] Migración: `20260227210000_add_payments_model`
+- [x] `profesor@test.com` marcado como `is_beta: true`
+
+### P2: Seguridad de Cuentas ✅
+- [x] Forgot password: email con token UUID, expiración 1 hora
+- [x] Reset password: validación de token + nueva contraseña
+- [x] Change password: requiere contraseña actual + JWT
+- [x] Email verification: token UUID, no bloquea acceso
+- [x] Resend verification: endpoint JWT
+- [x] Rate limiting login: 5 intentos / 15 min (in-memory Map)
+- [x] Frontend: /forgot-password, /reset-password, /verify-email
+
+### P3: Instituciones ✅
+- [x] Script CLI: `backend/scripts/manage-institution.ts`
+- [x] Comandos: create, add-teachers, list, status
+- [x] Crea profesores pre-verificados con reset token (7 días)
+- [x] No requiere panel admin (run manual desde terminal)
+
+### P4: Middleware de Suscripción ✅
+- [x] `requireActiveSubscription` en `auth/subscription.middleware.ts`
+- [x] Orden: beta bypass → institutional → personal → 403
+- [x] Aplicado a: POST /tests, activate, analyze-pdf, analyze-rubric
+- [x] NO aplicado a: GET (lectura), cursos, student (público)
+
+### P5: Límites de Uso ✅
+- [x] `checkPdfAnalysisLimit` (50/mes), `checkAttemptsLimit` (500/mes)
+- [x] Tracking: `trackPdfAnalysis()`, `trackAttemptUsage()` — SIEMPRE (incl. beta)
+- [x] Bloqueo: solo si no es beta
+- [x] Frontend: interceptor 403 en api.ts (axios + fetch/SSE)
+
+### P6: Integración Flow ✅
+- [x] Config: `backend/src/config/flow.ts` — HMAC-SHA256 signing
+- [x] Servicio: `payments.service.ts` — create/cancel subscription, webhook handler
+- [x] Endpoints: GET /subscription, POST /create-subscription, POST /webhook, POST /cancel
+- [x] Frontend: `paymentsAPI` en api.ts
+- [x] Env vars en Railway (API keys pendientes de cuenta sandbox Flow)
+
+### P7: Frontend de Pagos ✅
+- [x] Página /planes: plan card, features, subscribe button, usage bars
+- [x] SubscriptionBanner: contextual en dashboard (blue/amber/red según estado)
+- [x] Beta user: no banner + "Cuenta Beta" badge en /planes
+- [x] No-sub user: blue banner + "Suscribirse" button
+
+### P8: Grace Period y Suspensión ✅
+- [x] Auto-transition en middleware: ACTIVE → GRACE_PERIOD → SUSPENDED
+- [x] Personal: 1 día grace. Institucional: 7 días grace.
+- [x] Re-activación automática via webhook al pagar
+- [x] También en getSubscriptionStatus() para frontend
+
+### P9: Testing ✅
+- [x] Beta user: no banner, full access, /planes shows "Cuenta Beta"
+- [x] No-sub user: banner, POST /tests → 403, GET /tests → 200
+- [x] /planes page renders correctly for both user types
+- [x] Subscription API returns correct data
+
+---
+
 ## Pendientes Menores / Deuda Técnica
 
+- [ ] Configurar cuenta sandbox Flow y probar pago real con tarjetas de prueba
 - [ ] Página de resultados para estudiantes (acceso por link único)
 - [ ] Generación de PDF con resultados
 - [ ] Limpiar código legacy del pipeline de extracción completa (`analyzeDocumentMathpix` y fases asociadas)

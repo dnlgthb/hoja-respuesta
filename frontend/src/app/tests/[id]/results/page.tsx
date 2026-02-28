@@ -93,6 +93,7 @@ interface ResultsData {
     closedAt: string | null;
     passingThreshold: number;
     correctionCompletedAt: string | null;
+    pdfUrl: string | null;
   };
   students: StudentResult[];
   summary: ResultsSummary;
@@ -749,7 +750,7 @@ export default function ResultsPage() {
                               {answer.questionText && answer.questionText.trim() ? (
                                 <RichMathText text={answer.questionText} />
                               ) : (
-                                <span className="text-gray-400 italic">Pregunta {answer.questionNumber} (ver PDF)</span>
+                                <span className="text-gray-400 italic">Pregunta {answer.questionNumber}{data.test.pdfUrl ? ' (ver PDF)' : ''}</span>
                               )}
                             </div>
 

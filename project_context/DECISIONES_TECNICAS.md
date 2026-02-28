@@ -206,6 +206,66 @@ Registro de decisiones técnicas tomadas durante el desarrollo del proyecto.
 
 ---
 
+## Sistema de Pagos y Suscripciones
+
+**Decisión:** Flow (pasarela chilena) para pagos personales, manual para instituciones
+
+**Modelo de suscripción:**
+| Plan | Precio | Cobro | Pasarela |
+|------|--------|-------|----------|
+| Personal mensual | $8.990 CLP/mes (IVA incluido) | Automático | Flow |
+| Institucional | $6.990 CLP/profesor/mes | Manual (transferencia) | Sin Flow |
+
+**Límites por profesor por mes:**
+| Recurso | Límite | Qué consume |
+|---------|--------|-------------|
+| Intentos de estudiantes | 500 | Cada vez que un estudiante se une |
+| Análisis de PDF | 50 | Cada análisis con Mathpix/IA |
+
+**Política de estados:**
+| Estado | Condición | Acceso |
+|--------|-----------|--------|
+| ACTIVE | Pago al día | Completo |
+| GRACE_PERIOD | period_end pasado, grace_period_end no | Completo |
+| SUSPENDED | grace_period_end pasado o pago rechazado | Solo lectura |
+| CANCELLED | Cancelación voluntaria | Solo lectura hasta fin del período |
+
+**Decisiones clave:**
+- `is_beta: true` bypasses subscription + limits pero **siempre trackea uso** (para monitoreo de costos)
+- Auto-transition de estados por fechas (en middleware, no cron job)
+- Gate en API, no en frontend (frontend solo UX, backend siempre valida)
+- Webhook de Flow siempre retorna 200 (evita reintentos)
+- `commerceOrder` formato: `aproba-{teacherId}-{timestamp}` (permite extraer teacherId)
+- Instituciones se administran con script CLI (`scripts/manage-institution.ts`)
+
+**Alternativas descartadas:**
+| Opción | Motivo |
+|--------|--------|
+| Stripe | No soporta Webpay (principal medio de pago en Chile) |
+| MercadoPago | Comisiones más altas, menos integración con bancos chilenos |
+| Plan gratuito | Complejidad innecesaria para MVP |
+| Plan anual | Solo mensual para simplificar |
+| Cron job para estados | Auto-transition en middleware es más simple y no requiere infra adicional |
+
+---
+
+## Seguridad de Cuentas
+
+**Decisión:** Email verification + password recovery + rate limiting
+
+**Implementación:**
+- **Verificación email:** Token UUID en URL, `is_verified` flag. No bloquea acceso, solo muestra banner.
+- **Reset contraseña:** Token UUID + expiración 1 hora. Email con Resend.
+- **Rate limiting login:** 5 intentos / 15 min por email. In-memory Map (suficiente para escala actual).
+- **Cambio contraseña:** Requiere contraseña actual + JWT.
+
+**Decisión: No bloquear por email no verificado**
+- Motivo: Es molesto para el usuario, genera abandono
+- Solo mostrar banner reminder en dashboard
+- Endpoint `/resend-verification` disponible
+
+---
+
 ## Convenciones de Código
 
 **Nombrado:**

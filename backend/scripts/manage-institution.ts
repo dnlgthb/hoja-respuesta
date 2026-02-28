@@ -49,7 +49,7 @@ async function createInstitution(args: Record<string, string>) {
   const contactEmail = args['contact-email'];
   const contactName = args['contact-name'];
   const planPrice = parseInt(args['price'] || '6990');
-  const maxTeachers = args['max-teachers'] ? parseInt(args['max-teachers']) : null;
+  const maxTeachers = parseInt(args['max-teachers'] || '50');
   const months = parseInt(args['months'] || '12');
 
   if (!name || !contactEmail || !contactName) {

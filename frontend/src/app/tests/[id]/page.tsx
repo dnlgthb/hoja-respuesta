@@ -428,10 +428,6 @@ export default function TestDetailPage() {
             if (s.correction_criteria !== null) data.correction_criteria = s.correction_criteria;
           }
           if (s.points !== null) data.points = s.points;
-          if (s.options.require_units) {
-            data.require_units = true;
-            data.unit_penalty = s.options.unit_penalty;
-          }
 
           return { questionId: s.question_id, data };
         })
@@ -780,43 +776,6 @@ export default function TestDetailPage() {
                   )}
                 </div>
 
-                {/* Exigir unidades en MATH */}
-                {questions.some(q => (q.questionType || q.type) === 'MATH') && (
-                  <div className="border-t border-gray-100 pt-4">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={requireUnits}
-                        onChange={(e) => {
-                          setRequireUnits(e.target.checked);
-                          handleCorrectionOptionChange();
-                        }}
-                        className="mt-1 w-4 h-4 text-primary rounded focus:ring-primary"
-                      />
-                      <div>
-                        <span className="font-medium text-gray-900">Exigir unidades en respuestas matemáticas</span>
-                        <p className="text-sm text-gray-500">La IA verificará si el estudiante incluye las unidades correctas</p>
-                      </div>
-                    </label>
-                    {requireUnits && (
-                      <div className="ml-7 mt-3 flex items-center gap-2">
-                        <label className="text-sm text-gray-700">Descuento si faltan o están mal:</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={unitPenalty}
-                          onChange={(e) => {
-                            setUnitPenalty(e.target.value);
-                            handleCorrectionOptionChange();
-                          }}
-                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 focus:ring-2 focus:ring-primary"
-                        />
-                        <span className="text-sm text-gray-700">%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* Modalidad de visualización */}
                 <div className="border-t border-gray-100 pt-4">

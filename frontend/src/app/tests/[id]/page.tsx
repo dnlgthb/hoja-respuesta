@@ -51,6 +51,8 @@ export default function TestDetailPage() {
   // Unit options (test-level)
   const [requireUnits, setRequireUnits] = useState(false);
   const [unitPenalty, setUnitPenalty] = useState<string>('50');
+  // Strictness level
+  const [correctionStrictness, setCorrectionStrictness] = useState<string>('normal');
 
   // Rubric (pauta de corrección)
   const [showRubricUploadModal, setShowRubricUploadModal] = useState(false);
@@ -100,6 +102,7 @@ export default function TestDetailPage() {
       setShowOneAtATime(data.showOneAtATime ?? data.show_one_at_a_time ?? false);
       setRequireUnits(data.requireUnits ?? data.require_units ?? false);
       setUnitPenalty(String((data.unitPenalty ?? data.unit_penalty ?? 0.5) * 100));
+      setCorrectionStrictness(data.correctionStrictness ?? data.correction_strictness ?? 'normal');
       setHasUnsavedCorrectionOptions(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar la prueba');
@@ -290,6 +293,7 @@ export default function TestDetailPage() {
         showOneAtATime,
         requireUnits,
         unitPenalty: parseFloat(unitPenalty) / 100,
+        correctionStrictness,
       });
 
       setHasUnsavedCorrectionOptions(false);
@@ -659,6 +663,41 @@ export default function TestDetailPage() {
               </div>
 
               <div className="space-y-4">
+                {/* Nivel de exigencia IA */}
+                <div className="border-b border-gray-100 pb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Nivel de exigencia de la corrección IA</p>
+                  <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+                    {([
+                      { value: 'strict', label: 'Estricto' },
+                      { value: 'normal', label: 'Normal' },
+                      { value: 'flexible', label: 'Flexible' },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setCorrectionStrictness(option.value);
+                          handleCorrectionOptionChange();
+                        }}
+                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                          correctionStrictness === option.value
+                            ? 'bg-primary text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        } ${option.value !== 'strict' ? 'border-l border-gray-300' : ''}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {correctionStrictness === 'strict'
+                      ? 'Exige que el estudiante cubra todos los elementos de la pauta. Sinónimos permitidos, pero no puede faltar contenido.'
+                      : correctionStrictness === 'flexible'
+                      ? 'Basta con que el estudiante demuestre comprensión general del tema. Ideal para evaluaciones formativas.'
+                      : 'Acepta respuestas parciales que van en la dirección correcta. Configuración recomendada.'}
+                  </p>
+                </div>
+
                 {/* Justificación V/F */}
                 <div className="border-b border-gray-100 pb-4">
                   <label className="flex items-start gap-3 cursor-pointer">

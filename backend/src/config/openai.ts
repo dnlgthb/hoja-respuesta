@@ -1779,8 +1779,9 @@ export async function correctWithAI(params: {
   correctionCriteria: string;
   maxPoints: number;
   studentAnswer: string;
+  strictness?: string;
 }): Promise<{ pointsEarned: number; feedback: string }> {
-  const { questionType, questionText, correctionCriteria, maxPoints, studentAnswer } = params;
+  const { questionType, questionText, correctionCriteria, maxPoints, studentAnswer, strictness = 'normal' } = params;
 
   // Para MATH: solo comparar resultado, NO pedir procedimiento
   const typeDescription = questionType === 'MATH'
@@ -1802,6 +1803,26 @@ REGLAS PARA MATEMÁTICAS:
 - Si la pauta dice "X=5", "x = 5", "El resultado es 5", etc., el estudiante solo necesita responder "5" para obtener puntaje completo. NO exijas que escriba "X=5" ni la variable.
 - Formatos equivalentes son SIEMPRE correctos: 1/2 = 0.5 = 0,5 = \\frac{1}{2}
 - NO penalices por falta de unidades a menos que se indique explícitamente en la pauta`
+    : strictness === 'strict'
+    ? `
+REGLAS PARA DESARROLLO (MODO ESTRICTO):
+- Compara la respuesta del estudiante con la PAUTA DE CORRECCIÓN
+- El estudiante debe cubrir TODOS los elementos/puntos mencionados en la pauta
+- Si falta algún elemento de la pauta, descontar proporcionalmente
+- Sinónimos y parafraseo están bien, pero el contenido debe estar completo
+- Si la respuesta no tiene relación con la pauta: 0 puntos
+- NO agregues requisitos que no están en la pauta
+- Si la pauta tiene indicadores de puntaje (ej: "2 pts si..., 1 pt si..."), respétalos`
+    : strictness === 'flexible'
+    ? `
+REGLAS PARA DESARROLLO (MODO FLEXIBLE):
+- Compara la respuesta del estudiante con la PAUTA DE CORRECCIÓN
+- Basta con que el estudiante demuestre COMPRENSIÓN GENERAL del tema
+- Si aborda la idea principal de la pauta: puntaje COMPLETO aunque falten detalles secundarios
+- Solo descontar si la respuesta es claramente incompleta o errónea en lo fundamental
+- Si la respuesta no tiene relación con la pauta: 0 puntos
+- NO agregues requisitos que no están en la pauta
+- Si la pauta tiene indicadores de puntaje (ej: "2 pts si..., 1 pt si..."), respétalos`
     : `
 REGLAS PARA DESARROLLO:
 - Compara la respuesta del estudiante con la PAUTA DE CORRECCIÓN
@@ -1895,22 +1916,40 @@ export async function correctTrueFalseWithJustification(params: {
   correctionCriteria: string | null;
   maxPoints: number;
   penaltyPercentage: number;
+  strictness?: string;
 }): Promise<{ pointsEarned: number; feedback: string }> {
-  const { questionText, correctAnswer, studentAnswer, justification, correctionCriteria, maxPoints, penaltyPercentage } = params;
+  const { questionText, correctAnswer, studentAnswer, justification, correctionCriteria, maxPoints, penaltyPercentage, strictness = 'normal' } = params;
+
+  const penaltyPoints = Math.round(maxPoints * (1 - penaltyPercentage) * 100) / 100;
+
+  const strictnessRules = strictness === 'strict'
+    ? `REGLA (MODO ESTRICTO):
+- La justificación debe cubrir TODOS los puntos mencionados en la pauta
+- Si falta algún elemento importante → ${penaltyPoints} puntos
+- Solo puntaje completo (${maxPoints} pts) si la justificación es completa
+- Sinónimos y parafraseo están bien, pero el contenido debe estar completo
+- Si está vacía o no tiene relación → ${penaltyPoints} puntos`
+    : strictness === 'flexible'
+    ? `REGLA (MODO FLEXIBLE):
+- Cualquier justificación razonable que vaya en la dirección correcta → ${maxPoints} puntos
+- Solo penalizar si la justificación está vacía o es completamente incorrecta → ${penaltyPoints} puntos
+- NO exijas detalle ni completitud — basta con demostrar comprensión general`
+    : `REGLA SIMPLE:
+- Si el estudiante menciona AL MENOS PARTE de lo que dice la pauta (aunque con otras palabras, sinónimos, o de forma resumida) → ${maxPoints} puntos
+- Solo penalizar si la justificación está vacía, no tiene relación con la pauta, o es completamente incorrecta → ${penaltyPoints} puntos
+
+SÉ FLEXIBLE:
+- Una justificación parcial que va en la dirección correcta es SUFICIENTE para puntaje completo
+- NO exijas que el estudiante cubra TODOS los elementos de la pauta, a menos que la pregunta pida explícitamente mencionar una cantidad específica de elementos
+- NO pidas más detalle o profundidad del que tiene la pauta`;
 
   const prompt = `¿La justificación del estudiante es coherente con la pauta?
 
 PAUTA: ${correctionCriteria || 'Explicar por qué es falso'}
 ESTUDIANTE: ${justification || '(vacío)'}
 
-REGLA SIMPLE:
-- Si el estudiante menciona AL MENOS PARTE de lo que dice la pauta (aunque con otras palabras, sinónimos, o de forma resumida) → ${maxPoints} puntos
-- Solo penalizar si la justificación está vacía, no tiene relación con la pauta, o es completamente incorrecta → ${Math.round(maxPoints * (1 - penaltyPercentage) * 100) / 100} puntos
+${strictnessRules}
 
-SÉ FLEXIBLE:
-- Una justificación parcial que va en la dirección correcta es SUFICIENTE para puntaje completo
-- NO exijas que el estudiante cubra TODOS los elementos de la pauta, a menos que la pregunta pida explícitamente mencionar una cantidad específica de elementos
-- NO pidas más detalle o profundidad del que tiene la pauta
 - NO agregues requisitos que no están en la pauta
 - Si la pauta dice "la respuesta es 4" y el estudiante dice "porque es 4", es CORRECTO (${maxPoints} pts)
 

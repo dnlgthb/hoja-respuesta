@@ -99,6 +99,8 @@ export class TestsController {
         // Exigir unidades (nivel prueba)
         requireUnits,
         unitPenalty,
+        // Nivel de exigencia
+        correctionStrictness,
       } = req.body;
       const teacherId = req.teacherId!;
 
@@ -109,7 +111,8 @@ export class TestsController {
         evaluateSpelling !== undefined ||
         evaluateWriting !== undefined ||
         spellingPoints !== undefined ||
-        writingPoints !== undefined;
+        writingPoints !== undefined ||
+        correctionStrictness !== undefined;
 
       const hasDisplayOptions =
         showOneAtATime !== undefined ||
@@ -133,6 +136,7 @@ export class TestsController {
         showOneAtATime,
         requireUnits,
         unitPenalty,
+        correctionStrictness,
       });
 
       res.status(200).json(updatedTest);

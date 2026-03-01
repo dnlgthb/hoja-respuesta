@@ -94,6 +94,7 @@ export class CorrectionService {
       select: {
         require_false_justification: true,
         false_justification_penalty: true,
+        correction_strictness: true,
       },
     });
 
@@ -179,6 +180,7 @@ export class CorrectionService {
             correctionCriteria: question.correction_criteria,
             maxPoints: Number(question.points),
             penaltyPercentage: test.false_justification_penalty,
+            strictness: test.correction_strictness,
           });
 
           await prisma.answer.update({
@@ -231,6 +233,7 @@ export class CorrectionService {
       select: {
         require_units: true,
         unit_penalty: true,
+        correction_strictness: true,
       },
     });
 
@@ -327,6 +330,7 @@ export class CorrectionService {
             correctionCriteria: question.correction_criteria || '',
             maxPoints: Number(question.points),
             studentAnswer: answer.answer_value,
+            strictness: test?.correction_strictness,
           });
         }
 

@@ -30,6 +30,8 @@ export interface UpdateTestData {
   // Exigir unidades (nivel prueba)
   requireUnits?: boolean;
   unitPenalty?: number;
+  // Nivel de exigencia
+  correctionStrictness?: string;
 }
 
 export class TestsService {
@@ -283,6 +285,8 @@ export class TestsService {
         // Exigir unidades (nivel prueba)
         require_units: data.requireUnits,
         unit_penalty: data.unitPenalty,
+        // Nivel de exigencia
+        correction_strictness: data.correctionStrictness,
       },
       include: {
         course: {

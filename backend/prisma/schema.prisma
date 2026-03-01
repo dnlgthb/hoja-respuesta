@@ -112,6 +112,8 @@ model Test {
   // Exigir unidades (nivel prueba)
   require_units               Boolean @default(false) // Exigir unidades en respuestas MATH
   unit_penalty                Float   @default(0.5)   // Porcentaje de descuento (0.5 = 50%)
+  // Nivel de exigencia de la corrección IA
+  correction_strictness       String  @default("normal") // "strict" | "normal" | "flexible"
 
   // Relaciones
   teacher          Teacher           @relation(fields: [teacher_id], references: [id], onDelete: Cascade)

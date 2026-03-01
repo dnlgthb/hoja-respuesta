@@ -60,6 +60,9 @@ export interface Test {
   require_units?: boolean;
   unitPenalty?: number;
   unit_penalty?: number;
+  // Nivel de exigencia
+  correctionStrictness?: string;
+  correction_strictness?: string;
 }
 
 export interface Question {
@@ -223,6 +226,8 @@ export interface UpdateTestRequest {
   // Exigir unidades (nivel prueba)
   requireUnits?: boolean;
   unitPenalty?: number;
+  // Nivel de exigencia
+  correctionStrictness?: string;
 }
 
 export interface UploadPDFResponse {

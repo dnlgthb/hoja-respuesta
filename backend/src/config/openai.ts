@@ -1898,19 +1898,21 @@ export async function correctTrueFalseWithJustification(params: {
 }): Promise<{ pointsEarned: number; feedback: string }> {
   const { questionText, correctAnswer, studentAnswer, justification, correctionCriteria, maxPoints, penaltyPercentage } = params;
 
-  const prompt = `¿La justificación del estudiante dice lo mismo que la pauta?
+  const prompt = `¿La justificación del estudiante es coherente con la pauta?
 
 PAUTA: ${correctionCriteria || 'Explicar por qué es falso'}
 ESTUDIANTE: ${justification || '(vacío)'}
 
 REGLA SIMPLE:
-- Si el estudiante dice lo mismo que la pauta (aunque con otras palabras) → ${maxPoints} puntos
-- Si el estudiante NO dice lo que pide la pauta o está vacío → ${Math.round(maxPoints * (1 - penaltyPercentage) * 100) / 100} puntos
+- Si el estudiante menciona AL MENOS PARTE de lo que dice la pauta (aunque con otras palabras, sinónimos, o de forma resumida) → ${maxPoints} puntos
+- Solo penalizar si la justificación está vacía, no tiene relación con la pauta, o es completamente incorrecta → ${Math.round(maxPoints * (1 - penaltyPercentage) * 100) / 100} puntos
 
-PROHIBIDO:
+SÉ FLEXIBLE:
+- Una justificación parcial que va en la dirección correcta es SUFICIENTE para puntaje completo
+- NO exijas que el estudiante cubra TODOS los elementos de la pauta, a menos que la pregunta pida explícitamente mencionar una cantidad específica de elementos
+- NO pidas más detalle o profundidad del que tiene la pauta
 - NO agregues requisitos que no están en la pauta
-- NO pidas más detalle del que tiene la pauta
-- Si la pauta dice "la respuesta es 4" y el estudiante dice "la respuesta es 4", es CORRECTO (${maxPoints} pts)
+- Si la pauta dice "la respuesta es 4" y el estudiante dice "porque es 4", es CORRECTO (${maxPoints} pts)
 
 JSON: { "pointsEarned": <número>, "feedback": "<máximo 10 palabras>" }`;
 

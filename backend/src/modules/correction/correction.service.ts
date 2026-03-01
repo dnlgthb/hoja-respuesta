@@ -429,13 +429,15 @@ export class CorrectionService {
           evaluateWriting: test.evaluate_writing,
         });
 
-        // Calcular puntajes
+        // Calcular puntajes (redondeado a 0.5)
+        const roundToHalf = (n: number) => Math.round(n * 2) / 2;
+
         const spellingScore = test.evaluate_spelling && result.spellingLevel !== null
-          ? (test.spelling_points || 0) * (result.spellingLevel / 100)
+          ? roundToHalf((test.spelling_points || 0) * (result.spellingLevel / 100))
           : null;
 
         const writingScore = test.evaluate_writing && result.writingLevel !== null
-          ? (test.writing_points || 0) * (result.writingLevel / 100)
+          ? roundToHalf((test.writing_points || 0) * (result.writingLevel / 100))
           : null;
 
         // Guardar resultados en el intento

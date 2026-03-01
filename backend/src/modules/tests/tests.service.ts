@@ -1159,12 +1159,12 @@ export class TestsService {
       throw new Error('Respuesta no encontrada');
     }
 
-    // Validar que los puntos no excedan el máximo y sean enteros
+    // Validar que los puntos no excedan el máximo, redondeados a 0.5
     let pointsToSave: number | undefined;
     if (data.pointsEarned !== undefined) {
       const maxPoints = Number(answer.question.points);
-      // Redondear a entero
-      pointsToSave = Math.round(data.pointsEarned);
+      // Redondear a múltiplo de 0.5
+      pointsToSave = Math.round(data.pointsEarned * 2) / 2;
       if (pointsToSave < 0 || pointsToSave > maxPoints) {
         throw new Error(`Los puntos deben estar entre 0 y ${maxPoints}`);
       }

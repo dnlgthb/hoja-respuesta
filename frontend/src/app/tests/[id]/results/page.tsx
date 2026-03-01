@@ -843,9 +843,12 @@ export default function ResultsPage() {
                                       type="number"
                                       min="0"
                                       max={answer.maxPoints}
-                                      step="1"
+                                      step="0.5"
                                       value={editValues.points}
-                                      onChange={(e) => setEditValues({ ...editValues, points: Math.round(parseFloat(e.target.value) || 0) })}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setEditValues({ ...editValues, points: Math.round(val * 2) / 2 });
+                                      }}
                                       className="w-24 px-2 py-1 border border-gray-300 rounded text-gray-900"
                                     />
                                   </div>

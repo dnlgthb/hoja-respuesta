@@ -1798,7 +1798,10 @@ REGLAS PARA MATEMÁTICAS:
 - Si el resultado coincide (mismo valor): puntaje completo
 - Si no coincide: 0 puntos
 - NUNCA pidas "desarrollo", "procedimiento" o "demostración"
-- El feedback solo dice si es correcto o incorrecto`
+- El feedback solo dice si es correcto o incorrecto
+- Si la pauta dice "X=5", "x = 5", "El resultado es 5", etc., el estudiante solo necesita responder "5" para obtener puntaje completo. NO exijas que escriba "X=5" ni la variable.
+- Formatos equivalentes son SIEMPRE correctos: 1/2 = 0.5 = 0,5 = \\frac{1}{2}
+- NO penalices por falta de unidades a menos que se indique explícitamente en la pauta`
     : `
 REGLAS PARA DESARROLLO:
 - Compara la respuesta del estudiante con la PAUTA DE CORRECCIÓN
@@ -1808,7 +1811,8 @@ REGLAS PARA DESARROLLO:
 - SÉ FLEXIBLE: no exijas las mismas palabras exactas de la pauta
 - NO agregues requisitos que no están en la pauta
 - NO pidas más detalle o profundidad del que tiene la pauta
-- La pauta es el ÚNICO criterio — si la pauta es breve, acepta respuestas breves`;
+- La pauta es el ÚNICO criterio — si la pauta es breve, acepta respuestas breves
+- Si la pauta tiene indicadores de puntaje (ej: "2 pts si..., 1 pt si..."), respétalos`;
 
   const prompt = `Eres un profesor evaluando la respuesta de un estudiante.
 
@@ -1823,9 +1827,11 @@ RESPUESTA DEL ESTUDIANTE:
 ${studentAnswer}
 ${typeInstructions}
 
+PUNTAJE: Asigna puntaje en incrementos de 0.5 (ej: 0, 0.5, 1, 1.5, 2, ...). NO uses decimales distintos como 1.3 o 2.7.
+
 Responde SOLO con JSON:
 {
-  "pointsEarned": <número entre 0 y ${maxPoints}>,
+  "pointsEarned": <número entre 0 y ${maxPoints} en pasos de 0.5>,
   "feedback": "<feedback breve>"
 }`;
 
@@ -1866,8 +1872,12 @@ Responde SOLO con JSON:
 
   const parsed = JSON.parse(responseText);
 
+  // Round to nearest 0.5
+  const rawPoints = typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0;
+  const roundedPoints = Math.round(rawPoints * 2) / 2;
+
   return {
-    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    pointsEarned: roundedPoints,
     feedback: parsed.feedback || 'No se pudo generar feedback.',
   };
 }
@@ -1943,8 +1953,12 @@ JSON: { "pointsEarned": <número>, "feedback": "<máximo 10 palabras>" }`;
 
   const parsed = JSON.parse(responseText);
 
+  // Round to nearest 0.5
+  const rawPointsVF = typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0;
+  const roundedPointsVF = Math.round(rawPointsVF * 2) / 2;
+
   return {
-    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    pointsEarned: roundedPointsVF,
     feedback: parsed.feedback || 'No se pudo generar feedback.',
   };
 }
@@ -1988,12 +2002,15 @@ EVALUACIÓN:
 IMPORTANTE - REGLAS ESTRICTAS:
 - Solo compara RESULTADOS, NO pidas desarrollo ni procedimiento
 - La respuesta puede estar en LaTeX (\\frac{1}{2} = 0.5 = 1/2)
-- Formatos equivalentes son correctos (1/2 = 0.5 = 0,5)
+- Formatos equivalentes son SIEMPRE correctos (1/2 = 0.5 = 0,5 = \\frac{1}{2})
+- Si la pauta dice "X=5" o "x = 5" o "El resultado es 5", el estudiante solo necesita responder "5" para obtener puntaje completo. NO exijas que escriba la variable.
 - NUNCA menciones "desarrollo", "procedimiento" o "demostración" en el feedback
 - El feedback solo debe decir si es correcto o incorrecto y mostrar la respuesta esperada
 
+PUNTAJE: Asigna puntaje en incrementos de 0.5 (ej: 0, 0.5, 1, 1.5, ...).
+
 Responde SOLO JSON:
-{ "pointsEarned": 0 o ${maxPoints}, "feedback": "Correcto" o "Incorrecto. Respuesta esperada: X" }`;
+{ "pointsEarned": <número en pasos de 0.5>, "feedback": "Correcto" o "Incorrecto. Respuesta esperada: X" }`;
 
   // DEBUG: Log completo ANTES de llamar a la IA
   console.log('\n========== DEBUG MATH with Units ==========');
@@ -2032,8 +2049,12 @@ Responde SOLO JSON:
 
   const parsed = JSON.parse(responseText);
 
+  // Round to nearest 0.5
+  const rawPoints = typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0;
+  const roundedPoints = Math.round(rawPoints * 2) / 2;
+
   return {
-    pointsEarned: typeof parsed.pointsEarned === 'number' ? parsed.pointsEarned : 0,
+    pointsEarned: roundedPoints,
     feedback: parsed.feedback || 'No se pudo generar feedback.',
   };
 }
